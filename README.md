@@ -1,72 +1,28 @@
-﻿# IndusAI
+# IndusAI foundation
 
-IndusAI is a frontend-only prototype for an AI-powered industrial approvals, compliance and government services platform built for Smart India Hackathon problem statement 26130, Government of Maharashtra.
+IndusAI is an industrial approvals and compliance workflow platform. Its primary workspace is a project-specific approval roadmap; AI assistance supports that workflow and does not replace official government authorities or portals.
 
-## Overview
+This repository contains the initial full-stack foundation:
 
-The prototype demonstrates how a business owner, government officer and administrator can work through industrial approvals, document validation, regulatory monitoring, grievances, inspections, incentives and SLA-driven workflows in one shared experience.
+- `frontend/`: Next.js App Router app and TypeScript API/roadmap contracts.
+- `backend/`: FastAPI service, initial Pydantic contracts, and health endpoint.
+- `docs/`: architecture, API/event contracts, and local development guide.
+- `infra/compose.yaml`: local PostgreSQL and Qdrant services.
 
-## Tech stack
+Only the health endpoint and initial data contracts are implemented. Project workflows, persistence, authentication, AI/RAG, document processing, and external integrations remain future implementation work; none are represented as working features.
 
-- Next.js
-- TypeScript
-- Tailwind CSS
-- Lucide icons
-- Recharts
-- Local mock state persistence
+## Local development
 
-## Prototype scope
+See [local development](docs/LOCAL_DEVELOPMENT.md) for prerequisites and commands. Begin with:
 
-The app demonstrates a fictional Maharashtra manufacturing project across Applicant, Government Officer, and Administrator workspaces. It includes shared application state, approval roadmaps, document processing simulations, readiness checks, officer review actions, inspections, grievances, incentives, renewals, regulatory review, analytics, notifications, and audit history.
-
-All AI, OCR, DigiLocker, regulatory monitoring, government decisions, and integrations are deterministic simulations. No external credentials or backend are required.
-
-## Getting started
-
-```bash
-npm install
-npm run dev
+```powershell
+Copy-Item .env.example .env
 ```
 
-Open http://localhost:3000
+Change the local-only database password in `.env`, then start PostgreSQL and Qdrant using the documented Compose command.
 
-## Available roles
+## Design references
 
-- Applicant
-- Government Officer
-- Administrator
-
-## Demo flow
-
-1. Open the welcome page.
-2. Choose a role.
-3. Use the seeded project and application data.
-4. Explore the roadmap, documents, readiness checks, applications, inspections, grievances and compliance views.
-5. Switch roles to see how state updates across the shared mock experience.
-
-For the complete presentation sequence, see [DEMO_GUIDE.md](DEMO_GUIDE.md).
-
-## Architecture
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the implemented frontend boundary, shared state model, domain relationships, and the planned FastAPI/PostgreSQL integration boundary. The current prototype uses React client state plus `localStorage` under `indusai-demo-state`; the **Reset demo** action restores fictional seed data.
-
-## Important notes
-
-- The app uses mock data and local state only.
-- No real AI or government APIs are connected.
-- State is persisted in browser localStorage and can be reset from the app shell.
-- This is a presentation prototype rather than a production system.
-- Frontend role switching is a demo convenience, not production authorization.
-- Figures, deadlines, eligibility, regulatory entries, and approval outcomes are illustrative and require official verification.
-
-## Future integration plan
-
-The intended production shape is Next.js plus a FastAPI service boundary and PostgreSQL persistence. Future adapters may add AI orchestration, document processing, verified regulatory knowledge retrieval, scheduled monitoring, notifications, and government portal connectors. Those services are deliberately not implemented here.
-
-## Scripts
-
-```bash
-npm run dev
-npm run build
-npm run lint
-```
+- [Architecture and domain model](docs/ARCHITECTURE.md)
+- [REST and SSE contracts](docs/API_CONTRACTS.md)
+- [Local development and checks](docs/LOCAL_DEVELOPMENT.md)
