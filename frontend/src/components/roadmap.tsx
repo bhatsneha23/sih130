@@ -117,11 +117,101 @@ function sortTasks(tasks: RoadmapTask[], sortBy: string) {
   return sorted;
 }
 
+function getNodeVisual(status: ApprovalTaskStatus, readiness?: RoadmapTask["readiness"]) {
+  // Blocked only when the task is explicitly blocked by status or readiness.
+  // Having prerequisites alone does not make a node blocked.
+  const isBlocked =
+    status === "blocked" || readiness === "blocked";
+
+  if (isBlocked) {
+    return {
+      fill: "#e2e8f0",
+      text: "#475569",
+      border: "#94a3b8",
+      muted: true,
+      label: "Blocked"
+    };
+  }
+
+  switch (status) {
+    case "completed":
+      return {
+        fill: "#10b981",
+        text: "#ffffff",
+        border: "#059669",
+        muted: false,
+        label: "Completed"
+      };
+    case "in_progress":
+      return {
+        fill: "#f97316",
+        text: "#ffffff",
+        border: "#ea580c",
+        muted: false,
+        label: "In progress"
+      };
+    case "not_started":
+    case "pending":
+      return {
+        fill: "#3b82f6",
+        text: "#ffffff",
+        border: "#2563eb",
+        muted: false,
+        label: status === "not_started" ? "Not started" : "Pending"
+      };
+    case "submitted":
+    case "under_review":
+      return {
+        fill: "#8b5cf6",
+        text: "#ffffff",
+        border: "#7c3aed",
+        muted: false,
+        label: status === "submitted" ? "Submitted" : "Under review"
+      };
+    case "changes_requested":
+      return {
+        fill: "#f59e0b",
+        text: "#ffffff",
+        border: "#d97706",
+        muted: false,
+        label: "Changes requested"
+      };
+    case "rejected":
+      return {
+        fill: "#ef4444",
+        text: "#ffffff",
+        border: "#dc2626",
+        muted: false,
+        label: "Rejected"
+      };
+    case "cancelled":
+      return {
+        fill: "#64748b",
+        text: "#ffffff",
+        border: "#475569",
+        muted: false,
+        label: "Cancelled"
+      };
+    default: {
+      // Fallback for any future status values
+      const meta = statusMeta[status as ApprovalTaskStatus];
+      return {
+        fill: "#64748b",
+        text: "#ffffff",
+        border: "#475569",
+        muted: false,
+        label: meta?.label ?? String(status)
+      };
+    }
+  }
+}
+
 function NodeShape({
   type,
   text,
   selected,
   status,
+  readiness,
   x,
   y,
   width,
@@ -132,49 +222,108 @@ function NodeShape({
   text: string;
   selected: boolean;
   status: ApprovalTaskStatus;
+  readiness?: RoadmapTask["readiness"];
   x: number;
   y: number;
   width: number;
   height: number;
   onClick: () => void;
 }) {
-  const fill = typeMeta[type].color;
-  const border = selected ? "#111827" : "#dbeafe";
-  const statusColor = {
-    not_started: "#94a3b8",
-    blocked: "#f59e0b",
-    pending: "#64748b",
-    in_progress: "#3b82f6",
-    submitted: "#0ea5e9",
-    under_review: "#8b5cf6",
-    changes_requested: "#f97316",
-    completed: "#10b981",
-    rejected: "#ef4444",
-    cancelled: "#64748b"
-  }[status];
+  const visual = getNodeVisual(status, readiness);
+  const border = selected ? "#0f172a" : visual.border;
+  const strokeWidth = selected ? 3.5 : 1.75;
+
+  // Split long titles into up to 2 lines for readability
+  const words = text.split(" ");
+  let line1 = text;
+  let line2 = "";
+  if (text.length > 18 && words.length > 1) {
+    const mid = Math.ceil(words.length / 2);
+    line1 = words.slice(0, mid).join(" ");
+    line2 = words.slice(mid).join(" ");
+  }
 
   const shape =
     type === "document"
-      ? { shape: "circle", cx: x + width / 2, cy: y + height / 2, rx: width / 2 }
+      ? { shape: "circle" as const, cx: x + width / 2, cy: y + height / 2, r: Math.max(width / 2, 42) }
       : type === "inspection"
-        ? { shape: "diamond", points: `${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}` }
-        : { shape: "rect", x, y, width, height };
+        ? {
+            shape: "diamond" as const,
+            points: `${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}`
+          }
+        : { shape: "rect" as const, x, y, width, height };
 
   return (
     <g onClick={onClick} style={{ cursor: "pointer" }}>
       {shape.shape === "circle" ? (
-        <circle cx={shape.cx} cy={shape.cy} r={Math.max(width / 2, 34)} fill={fill} opacity={selected ? 1 : 0.85} stroke={border} strokeWidth={selected ? 2.5 : 1.5} />
+        <circle
+          cx={shape.cx}
+          cy={shape.cy}
+          r={shape.r}
+          fill={visual.fill}
+          opacity={visual.muted ? 0.55 : selected ? 1 : 0.95}
+          stroke={border}
+          strokeWidth={strokeWidth}
+        />
       ) : shape.shape === "diamond" ? (
-        <polygon points={shape.points} fill={fill} opacity={selected ? 1 : 0.85} stroke={border} strokeWidth={selected ? 2.5 : 1.5} />
+        <polygon
+          points={shape.points}
+          fill={visual.fill}
+          opacity={visual.muted ? 0.55 : selected ? 1 : 0.95}
+          stroke={border}
+          strokeWidth={strokeWidth}
+        />
       ) : (
-        <rect x={shape.x} y={shape.y} width={shape.width} height={shape.height} rx={14} fill={fill} opacity={selected ? 1 : 0.9} stroke={border} strokeWidth={selected ? 2.5 : 1.5} />
+        <rect
+          x={shape.x}
+          y={shape.y}
+          width={shape.width}
+          height={shape.height}
+          rx={16}
+          fill={visual.fill}
+          opacity={visual.muted ? 0.55 : selected ? 1 : 0.95}
+          stroke={border}
+          strokeWidth={strokeWidth}
+        />
       )}
-      <circle cx={x + width - 10} cy={y + 10} r={6} fill={statusColor} stroke="#fff" strokeWidth={2} />
-      <text x={x + 12} y={y + 26} fill="#fff" fontSize={12} fontWeight={700} style={{ userSelect: "none" }}>
-        {text.length > 16 ? `${text.slice(0, 16)}…` : text}
+
+      {/* Title – multiline when needed */}
+      <text
+        x={x + width / 2}
+        y={line2 ? y + height / 2 - 10 : y + height / 2 - 4}
+        fill={visual.text}
+        fontSize={13}
+        fontWeight={700}
+        textAnchor="middle"
+        style={{ userSelect: "none", pointerEvents: "none" }}
+      >
+        {line1.length > 22 ? `${line1.slice(0, 20)}…` : line1}
       </text>
-      <text x={x + 12} y={y + 44} fill="rgba(255,255,255,0.9)" fontSize={10} style={{ userSelect: "none" }}>
-        {statusMeta[status].label}
+      {line2 ? (
+        <text
+          x={x + width / 2}
+          y={y + height / 2 + 8}
+          fill={visual.text}
+          fontSize={13}
+          fontWeight={700}
+          textAnchor="middle"
+          style={{ userSelect: "none", pointerEvents: "none" }}
+        >
+          {line2.length > 22 ? `${line2.slice(0, 20)}…` : line2}
+        </text>
+      ) : null}
+
+      {/* Status label under title */}
+      <text
+        x={x + width / 2}
+        y={line2 ? y + height / 2 + 26 : y + height / 2 + 16}
+        fill={visual.muted ? "#64748b" : "rgba(255,255,255,0.92)"}
+        fontSize={11}
+        fontWeight={500}
+        textAnchor="middle"
+        style={{ userSelect: "none", pointerEvents: "none" }}
+      >
+        {visual.label}
       </text>
     </g>
   );
@@ -194,15 +343,10 @@ function DependencyGraph({
   const [isDragging, setIsDragging] = useState(false);
   const dragState = useRef<{ x: number; y: number } | null>(null);
 
-  const layout = useMemo(() => {
+    const layout = useMemo(() => {
     if (!workspace || workspace.graph.nodes.length === 0) {
-      return { nodes: [], edges: [] };
+      return { nodes: [], edges: [], width: 900, height: 560 };
     }
-
-    const incomingCounts = new Map<string, number>();
-    workspace.graph.edges.forEach((edge) => {
-      incomingCounts.set(edge.target, (incomingCounts.get(edge.target) ?? 0) + 1);
-    });
 
     const layerMap = new Map<string, number>();
     const queue: string[] = [];
@@ -239,34 +383,35 @@ function DependencyGraph({
     });
 
     const maxLayer = Math.max(...[...layerGroups.keys()], 0);
-    const graphWidth = Math.max(800, (maxLayer + 1) * 220);
-    const availableWidth = Math.max(640, graphWidth);
     const maxItemsInLayer = Math.max(...[...layerGroups.values()].map((items) => items.length), 1);
-    const totalHeight = maxItemsInLayer * 110 + 100;
 
-    const nodeMap = new Map<string, RoadmapTask>();
-    workspace.graph.nodes.forEach((node) => {
-      nodeMap.set(node.id, node);
-    });
+    // Increased spacing for larger, more readable nodes
+    const nodeWidth = 200;
+    const nodeHeight = 96;
+    const layerGap = 260;
+    const rowGap = 140;
+
+    const graphWidth = Math.max(900, (maxLayer + 1) * layerGap + 80);
+    const totalHeight = Math.max(560, maxItemsInLayer * rowGap + 120);
 
     const nodes = workspace.graph.nodes.map((node) => {
       const layer = layerMap.get(node.id) ?? 0;
       const itemsInLayer = layerGroups.get(layer) ?? [];
       const index = itemsInLayer.indexOf(node.id);
-      const x = 30 + layer * 200 + (layer % 2) * 30;
-      const y = 40 + (index * 120) + (index % 2 ? 20 : 0);
+      const x = 40 + layer * layerGap + (layer % 2) * 24;
+      const y = 48 + index * rowGap + (index % 2 ? 16 : 0);
       return {
         ...node,
         layoutX: x,
         layoutY: y,
-        width: 170,
-        height: 80
+        width: nodeWidth,
+        height: nodeHeight
       };
     });
 
     const edgeData = workspace.graph.edges.map((edge) => {
-      const sourceNode = nodes.find((node) => node.id === edge.source)!;
-      const targetNode = nodes.find((node) => node.id === edge.target)!;
+      const sourceNode = nodes.find((n) => n.id === edge.source)!;
+      const targetNode = nodes.find((n) => n.id === edge.target)!;
       return {
         ...edge,
         sourceX: sourceNode.layoutX + sourceNode.width,
@@ -276,7 +421,7 @@ function DependencyGraph({
       };
     });
 
-    return { nodes, edges: edgeData, width: availableWidth, height: totalHeight };
+    return { nodes, edges: edgeData, width: graphWidth, height: totalHeight };
   }, [workspace]);
 
   useEffect(() => {
@@ -363,14 +508,14 @@ function DependencyGraph({
           }}
         >
           <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-            {layout.edges.map((edge) => (
+                        {layout.edges.map((edge) => (
               <path
                 key={edge.id}
-                d={`M ${edge.sourceX} ${edge.sourceY} C ${edge.sourceX + 70},${edge.sourceY} ${edge.targetX - 70},${edge.targetY} ${edge.targetX},${edge.targetY}`}
+                d={`M ${edge.sourceX} ${edge.sourceY} C ${edge.sourceX + 90},${edge.sourceY} ${edge.targetX - 90},${edge.targetY} ${edge.targetX},${edge.targetY}`}
                 fill="none"
-                stroke="#94a3b8"
-                strokeWidth={2}
-                strokeDasharray={edge.source === edge.target ? "4 4" : undefined}
+                stroke="#64748b"
+                strokeWidth={2.25}
+                strokeOpacity={0.85}
                 markerEnd="url(#arrowhead)"
               />
             ))}
@@ -381,6 +526,7 @@ function DependencyGraph({
                 text={node.title}
                 selected={selectedTaskId === node.id}
                 status={node.status}
+                readiness={node.readiness}
                 x={node.layoutX}
                 y={node.layoutY}
                 width={node.width}
@@ -390,35 +536,54 @@ function DependencyGraph({
             ))}
           </g>
           <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="7" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+            <marker id="arrowhead" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+              <polygon points="0 0, 12 4, 0 8" fill="#64748b" />
             </marker>
           </defs>
         </svg>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Legend</p>
-          <div className="mt-3 space-y-2">
-            {Object.entries(typeMeta).map(([type, details]) => (
-              <div key={type} className="flex items-center gap-2 text-sm text-slate-700">
-                <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: details.color }} />
-                {details.label}
-              </div>
-            ))}
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+          Node background colors
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-emerald-500 shadow-sm" />
+            <span>Completed / approved</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-orange-500 shadow-sm" />
+            <span>In progress</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-blue-500 shadow-sm" />
+            <span>Available to start</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-slate-300 shadow-sm opacity-70" />
+            <span>Blocked (prerequisites incomplete)</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-violet-500 shadow-sm" />
+            <span>Submitted / under review</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-amber-500 shadow-sm" />
+            <span>Changes requested</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-red-500 shadow-sm" />
+            <span>Rejected</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-slate-500 shadow-sm" />
+            <span>Cancelled</span>
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Status legend</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {Object.entries(statusMeta).map(([status, details]) => (
-              <span key={status} className={`inline-flex rounded-full px-2 py-1 text-[10px] font-medium ring-1 ${status === "positive" ? "" : ""}`}>
-                {details.label}
-              </span>
-            ))}
-          </div>
-        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Node shape still indicates type (rectangle = approval / action, circle = document, diamond = inspection). Selected nodes have a stronger dark border.
+        </p>
       </div>
     </div>
   );

@@ -9,7 +9,6 @@ export const NAV_ITEMS_BY_ROLE: Record<DemoRole, NavItem[]> = {
   Applicant: [
     { href: "/", label: "Dashboard" },
     { href: "/projects", label: "Projects" },
-    { href: "/roadmap", label: "Approval Roadmap" },
     { href: "/documents", label: "Documents" },
     { href: "/applications", label: "Applications" },
     { href: "/assistant", label: "AI Assistant" },
@@ -19,7 +18,6 @@ export const NAV_ITEMS_BY_ROLE: Record<DemoRole, NavItem[]> = {
     { href: "/", label: "Dashboard" },
     { href: "/officer", label: "Review Queue" },
     { href: "/applications", label: "Applications" },
-    { href: "/roadmap", label: "Approval Roadmap" },
     { href: "/documents", label: "Documents" }
   ],
   Administrator: [

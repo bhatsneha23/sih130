@@ -4,7 +4,7 @@ This document contains source files from selected Next.js project directories an
 
 **Project root:** `C:\Users\parth\Desktop\Projects\sih130\frontend`
 
-**Files included:** 32
+**Files included:** 37
 
 ---
 
@@ -13,17 +13,833 @@ This document contains source files from selected Next.js project directories an
 **File:** `app\applications\page.tsx`
 
 ```text
+"use client";
+
+
+
+import { useEffect, useState, useMemo } from "react";
+
+import { useRouter, useSearchParams } from "next/navigation";
+
 import { AppShell } from "@/components/app-shell";
-import { RoutePlaceholder } from "@/components/route-placeholder";
+
+import { OfficerWorkspace } from "@/components/officer-workspace";
+
+import { PageHeader, Panel, Button, StatusBadge, EmptyState } from "@/components/ui";
+
+import { getApplications, getProjects, createApplication, updateApplicationStatus } from "@/lib/api";
+
+import type { MockProject } from "@/contracts/project-full";
+
+import type { ApplicationRecord } from "@/contracts/workflows";
+
+import { getStoredDemoRole, type DemoRole } from "@/lib/demo-role";
+
+import { Suspense } from "react";
+
+function ApplicationsContent() {
+
+  const router = useRouter();
+
+  const searchParams = useSearchParams();
+
+  const projectFilter = searchParams.get("projectId") ?? "all";
+
+  const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+
+  const [projects, setProjects] = useState<MockProject[]>([]);
+
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [error, setError] = useState<string | null>(null);
+
+
+
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const [statusFilter, setStatusFilter] = useState("All");
+
+
+
+  const [isNewDialogOpen, setIsNewDialogOpen] = useState(false);
+
+  const [newAppName, setNewAppName] = useState("");
+
+  const [newAppAuthority, setNewAppAuthority] = useState("");
+
+  const [newAppType, setNewAppType] = useState("Factory License");
+
+  const [newAppDesc, setNewAppDesc] = useState("");
+
+
+
+  const [selectedApp, setSelectedApp] = useState<ApplicationRecord | null>(null);
+
+  const [role, setRole] = useState<DemoRole>("Applicant");
+
+
+
+  useEffect(() => setRole(getStoredDemoRole()), []);
+
+
+
+  const selectedProject = projects.find((project) => project.id === projectFilter);
+
+  const activeProject = selectedProject ?? projects[0];
+
+
+
+  const fetchApps = async () => {
+
+    try {
+
+      setIsLoading(true);
+
+      const [data, projectData] = await Promise.all([
+
+        getApplications(projectFilter === "all" ? undefined : projectFilter),
+
+        getProjects()
+
+      ]);
+
+      setApplications(data);
+
+      setProjects(projectData);
+
+      if (selectedApp) {
+
+        const updatedSelected = data.find(a => a.id === selectedApp.id);
+
+        if (updatedSelected) setSelectedApp(updatedSelected);
+
+      }
+
+    } catch (err: unknown) {
+
+      setError(err instanceof Error ? err.message : "Failed to load applications");
+
+    } finally {
+
+      setIsLoading(false);
+
+    }
+
+  };
+
+
+
+  useEffect(() => {
+
+    fetchApps();
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+  }, [projectFilter]);
+
+
+
+  const handleCreate = async (e: React.FormEvent) => {
+
+    e.preventDefault();
+
+    if (!newAppName || !newAppAuthority) return;
+
+    try {
+
+      const nameWithPrefix = `${newAppType}: ${newAppName}`;
+
+      if (!activeProject) return;
+
+      const updated = await createApplication(activeProject.id, nameWithPrefix);
+
+      setApplications(updated);
+
+      setIsNewDialogOpen(false);
+
+      setNewAppName("");
+
+      setNewAppAuthority("");
+
+      setNewAppDesc("");
+
+    } catch {
+
+      alert("Error creating application");
+
+    }
+
+  };
+
+
+
+  const handleStatusUpdate = async (appId: string, status: ApplicationRecord["status"]) => {
+
+    try {
+
+      const updated = await updateApplicationStatus(selectedApp?.projectId ?? activeProject?.id ?? "", appId, status, `Status changed to ${status}`);
+
+      setApplications(updated);
+
+      const updatedSelected = updated.find(a => a.id === appId);
+
+      if (updatedSelected) setSelectedApp(updatedSelected);
+
+      alert("Status updated successfully");
+
+    } catch {
+
+      alert("Error updating status");
+
+    }
+
+  };
+
+
+
+  const filteredApps = useMemo(() => {
+
+    return applications.filter(app => {
+
+      const matchesSearch = app.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+
+                            app.authority.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesStatus = statusFilter === "All" || app.status.toLowerCase() === statusFilter.toLowerCase().replace(" ", "_");
+
+      return matchesSearch && matchesStatus;
+
+    });
+
+  }, [applications, searchQuery, statusFilter]);
+
+
+
+  const getStatusTone = (status: string) => {
+
+    switch (status) {
+
+      case "draft": return "neutral";
+
+      case "submitted":
+
+      case "under_review": return "info";
+
+      case "changes_requested":
+
+      case "rejected": return "warning";
+
+      case "approved": return "positive";
+
+      default: return "neutral";
+
+    }
+
+  };
+
+
+
+  const formatStatus = (status: string) => {
+
+    return status.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+  };
+
+
+
+  if (role === "Officer") {
+
+    return <OfficerWorkspace mode="applications" />;
+
+  }
+
+
+
+  return (
+
+    <AppShell>
+
+      <div className="mx-auto max-w-5xl">
+
+        <PageHeader 
+
+          title="Applications" 
+
+          description={selectedProject ? `Applications for ${selectedProject.name}.` : "Track application submissions across all projects, review statuses, and follow-up tasks across authorities."}
+
+          actions={
+
+            <Button variant="primary" onClick={() => setIsNewDialogOpen(true)}>
+
+              New application
+
+            </Button>
+
+          }
+
+        />
+
+
+
+        {/* Filters */}
+
+        <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center">
+
+          <select
+
+            value={projectFilter}
+
+            onChange={(event) => router.push(event.target.value === "all" ? "/applications" : `/applications?projectId=${encodeURIComponent(event.target.value)}`)}
+
+            className="w-full sm:w-64 rounded-lg border border-slate-300 px-3 py-2 focus:border-[#27628a] focus:ring-[#27628a] outline-none text-sm"
+
+            aria-label="Filter applications by project"
+
+          >
+
+            <option value="all">All projects</option>
+
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+
+          </select>
+
+          <input 
+
+            type="text"
+
+            placeholder="Search by name or authority..."
+
+            className="flex-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-[#27628a] focus:ring-[#27628a] outline-none text-sm"
+
+            value={searchQuery}
+
+            onChange={e => setSearchQuery(e.target.value)}
+
+          />
+
+          <select 
+
+            className="w-full sm:w-auto rounded-lg border border-slate-300 px-3 py-2 focus:border-[#27628a] focus:ring-[#27628a] outline-none bg-white min-w-[180px] text-sm"
+
+            value={statusFilter}
+
+            onChange={e => setStatusFilter(e.target.value)}
+
+          >
+
+            <option value="All">All Statuses</option>
+
+            <option value="Draft">Draft</option>
+
+            <option value="Submitted">Submitted</option>
+
+            <option value="Under Review">Under Review</option>
+
+            <option value="Changes Requested">Changes Requested</option>
+
+            <option value="Approved">Approved</option>
+
+            <option value="Rejected">Rejected</option>
+
+          </select>
+
+        </div>
+
+
+
+        {isLoading ? (
+
+          <div className="animate-pulse space-y-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+            <div className="h-48 bg-slate-100 rounded-2xl"></div>
+
+            <div className="h-48 bg-slate-100 rounded-2xl"></div>
+
+            <div className="h-48 bg-slate-100 rounded-2xl"></div>
+
+          </div>
+
+        ) : error ? (
+
+          <EmptyState title="Error loading applications" description={error} />
+
+        ) : filteredApps.length === 0 ? (
+
+          <EmptyState 
+
+            title="No applications found" 
+
+            description="Try adjusting your filters or create a new application."
+
+            action={<Button onClick={() => setIsNewDialogOpen(true)}>New application</Button>}
+
+          />
+
+        ) : (
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+            {filteredApps.map(app => (
+
+              <div 
+
+                key={app.id} 
+
+                onClick={() => setSelectedApp(app)}
+
+                className="cursor-pointer transition-transform hover:-translate-y-1 h-full"
+
+              >
+
+                <Panel className={`h-full flex flex-col ${selectedApp?.id === app.id ? 'ring-2 ring-[#27628a]' : ''}`}>
+
+                  <div className="flex justify-between items-start mb-3 gap-2">
+
+                    <StatusBadge tone={getStatusTone(app.status)}>
+
+                      {formatStatus(app.status)}
+
+                    </StatusBadge>
+
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded whitespace-nowrap">
+
+                      {app.referenceNumber || 'Pending Ref'}
+
+                    </span>
+
+                  </div>
+
+                  <h3 className="font-semibold text-[#172b3a] mb-1 line-clamp-2">{app.name}</h3>
+
+                  <p className="text-sm text-slate-600 mb-4 line-clamp-1">{app.authority}</p>
+
+
+
+                  <div className="mt-auto pt-4 border-t border-slate-100 flex flex-col gap-2 text-xs text-slate-500">
+
+                    <div className="flex justify-between">
+
+                      <span>Project:</span>
+
+                      <span className="truncate ml-2 font-medium text-slate-700">{app.projectName}</span>
+
+                    </div>
+
+                    {app.submittedAt && (
+
+                      <div className="flex justify-between">
+
+                        <span>Submitted:</span>
+
+                        <span>{new Date(app.submittedAt).toLocaleDateString()}</span>
+
+                      </div>
+
+                    )}
+
+                    <div className="flex justify-between">
+
+                      <span>Updated:</span>
+
+                      <span>{new Date(app.lastUpdatedAt).toLocaleDateString()}</span>
+
+                    </div>
+
+                    {app.pendingAction && (
+
+                      <div className="text-amber-700 mt-1 font-medium bg-amber-50 p-2 rounded-lg border border-amber-100 line-clamp-2">
+
+                        Action: {app.pendingAction}
+
+                      </div>
+
+                    )}
+
+                  </div>
+
+                </Panel>
+
+              </div>
+
+            ))}
+
+          </div>
+
+        )}
+
+
+
+        {/* Selected App Details */}
+
+        {selectedApp && (
+
+          <div className="mt-8 scroll-mt-8" id="app-details">
+
+            <Panel title="Application Details" action={<Button variant="ghost" onClick={() => setSelectedApp(null)}>Close</Button>}>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+                <div className="md:col-span-2 space-y-6">
+
+                  <div>
+
+                    <h3 className="text-2xl font-semibold text-[#172b3a] mb-1">{selectedApp.name}</h3>
+
+                    <p className="text-slate-600">{selectedApp.authority}</p>
+
+                  </div>
+
+
+
+                  <div className="flex flex-wrap gap-4 items-center">
+
+                    <StatusBadge tone={getStatusTone(selectedApp.status)}>
+
+                      {formatStatus(selectedApp.status)}
+
+                    </StatusBadge>
+
+                    <span className="text-sm font-medium text-slate-500 bg-slate-50 px-3 py-1 rounded-full border border-slate-200">
+
+                      Ref: {selectedApp.referenceNumber || 'Pending'}
+
+                    </span>
+
+                    <span className="text-sm text-slate-500">
+
+                      Project: {selectedApp.projectName}
+
+                    </span>
+
+                  </div>
+
+
+
+                  {selectedApp.pendingAction && (
+
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl">
+
+                      <h4 className="font-semibold text-sm mb-1">Action Required</h4>
+
+                      <p className="text-sm">{selectedApp.pendingAction}</p>
+
+                    </div>
+
+                  )}
+
+
+
+                  <div className="border-t border-slate-200 pt-6">
+
+                    <h4 className="font-semibold text-[#172b3a] mb-5 text-lg">Timeline</h4>
+
+                    <div className="space-y-6">
+
+                      {selectedApp.history.map((entry, idx) => (
+
+                        <div key={entry.id} className="flex gap-4">
+
+                          <div className="flex flex-col items-center">
+
+                            <div className="w-3 h-3 bg-[#27628a] rounded-full mt-1.5 ring-4 ring-[#edf5fa]"></div>
+
+                            {idx !== selectedApp.history.length - 1 && (
+
+                              <div className="w-px h-full bg-slate-200 mt-2"></div>
+
+                            )}
+
+                          </div>
+
+                          <div className="pb-2">
+
+                            <p className="text-sm font-medium text-[#172b3a]">{entry.message}</p>
+
+                            <div className="flex items-center gap-3 mt-1.5">
+
+                              <span className="text-xs text-slate-500 font-mono">
+
+                                {new Date(entry.timestamp).toLocaleString()}
+
+                              </span>
+
+                              {entry.status && (
+
+                                <StatusBadge tone={getStatusTone(entry.status)}>
+
+                                  {formatStatus(entry.status)}
+
+                                </StatusBadge>
+
+                              )}
+
+                            </div>
+
+                          </div>
+
+                        </div>
+
+                      ))}
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+
+
+                <div className="space-y-6">
+
+                  <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+
+                    <h4 className="font-semibold text-sm text-[#172b3a] mb-4">Quick Actions</h4>
+
+                    <div className="flex flex-col gap-3">
+
+                      {selectedApp.status === "draft" && (
+
+                        <Button onClick={() => handleStatusUpdate(selectedApp.id, "submitted")}>
+
+                          Submit Application
+
+                        </Button>
+
+                      )}
+
+                      {selectedApp.status === "changes_requested" && (
+
+                        <Button onClick={() => handleStatusUpdate(selectedApp.id, "under_review")}>
+
+                          Respond & Resubmit
+
+                        </Button>
+
+                      )}
+
+                      <Button variant="secondary" onClick={() => alert("Document upload not implemented in demo")}>
+
+                        Upload Document
+
+                      </Button>
+
+                    </div>
+
+                  </div>
+
+
+
+                  {selectedApp.documents.length > 0 && (
+
+                    <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+
+                      <h4 className="font-semibold text-sm text-[#172b3a] mb-3">Attached Documents</h4>
+
+                      <ul className="space-y-2">
+
+                        {selectedApp.documents.map((doc, idx) => (
+
+                          <li key={idx} className="text-sm text-[#27628a] flex items-center gap-2 bg-white border border-slate-200 p-2.5 rounded-lg shadow-sm">
+
+                            <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
+
+                            </svg>
+
+                            <span className="truncate">{doc}</span>
+
+                          </li>
+
+                        ))}
+
+                      </ul>
+
+                    </div>
+
+                  )}
+
+                </div>
+
+              </div>
+
+            </Panel>
+
+          </div>
+
+        )}
+
+
+
+      </div>
+
+
+
+      {/* New Application Dialog */}
+
+      {isNewDialogOpen && (
+
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+
+              <h2 className="text-lg font-semibold text-[#172b3a]">New Application</h2>
+
+              <button 
+
+                onClick={() => setIsNewDialogOpen(false)}
+
+                className="text-slate-400 hover:text-slate-600 transition-colors w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200"
+
+              >
+
+                ✕
+
+              </button>
+
+            </div>
+
+            <form onSubmit={handleCreate} className="p-6 space-y-5">
+
+              <div>
+
+                <label className="block text-sm font-medium text-[#172b3a] mb-1.5">Approval Type</label>
+
+                <select 
+
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-[#27628a] focus:ring-2 focus:ring-[#edf5fa] text-sm"
+
+                  value={newAppType}
+
+                  onChange={e => setNewAppType(e.target.value)}
+
+                >
+
+                  <option>Factory License</option>
+
+                  <option>Water Connection</option>
+
+                  <option>Fire Safety NOC</option>
+
+                  <option>Environmental Clearance</option>
+
+                  <option>Building Plan Approval</option>
+
+                  <option>Trade License</option>
+
+                </select>
+
+              </div>
+
+
+
+              <div>
+
+                <label className="block text-sm font-medium text-[#172b3a] mb-1.5">Application Name <span className="text-red-500"></span></label>
+
+                <input 
+
+                  type="text" 
+
+                  required
+
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-[#27628a] focus:ring-2 focus:ring-[#edf5fa] text-sm"
+
+                  placeholder="e.g. Unit 1 Setup"
+
+                  value={newAppName}
+
+                  onChange={e => setNewAppName(e.target.value)}
+
+                />
+
+              </div>
+
+
+
+              <div>
+
+                <label className="block text-sm font-medium text-[#172b3a] mb-1.5">Authority <span className="text-red-500"></span></label>
+
+                <input 
+
+                  type="text" 
+
+                  required
+
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-[#27628a] focus:ring-2 focus:ring-[#edf5fa] text-sm"
+
+                  placeholder="e.g. State Pollution Control Board"
+
+                  value={newAppAuthority}
+
+                  onChange={e => setNewAppAuthority(e.target.value)}
+
+                />
+
+              </div>
+
+
+
+              <div>
+
+                <label className="block text-sm font-medium text-[#172b3a] mb-1.5">Notes / Description</label>
+
+                <textarea 
+
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-[#27628a] focus:ring-2 focus:ring-[#edf5fa] text-sm resize-none"
+
+                  rows={3}
+
+                  placeholder="Add any initial notes..."
+
+                  value={newAppDesc}
+
+                  onChange={e => setNewAppDesc(e.target.value)}
+
+                ></textarea>
+
+              </div>
+
+
+
+              <div className="mt-6 flex justify-end gap-3 pt-5 border-t border-slate-100">
+
+                <Button type="button" variant="ghost" onClick={() => setIsNewDialogOpen(false)}>
+
+                  Cancel
+
+                </Button>
+
+                <Button type="submit" variant="primary">
+
+                  Create Application
+
+                </Button>
+
+              </div>
+
+            </form>
+
+          </div>
+
+        </div>
+
+      )}
+
+    </AppShell>
+
+  );
+
+}
 
 export default function ApplicationsPage() {
   return (
-    <AppShell>
-      <RoutePlaceholder
-        title="Applications"
-        description="Track application submissions, review statuses, and follow-up tasks across authorities."
-      />
-    </AppShell>
+    <Suspense fallback={<div>Loading...</div>}>
+      <ApplicationsContent />
+    </Suspense>
   );
 }
 ```
@@ -35,16 +851,310 @@ export default function ApplicationsPage() {
 **File:** `app\assistant\page.tsx`
 
 ```text
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
-import { RoutePlaceholder } from "@/components/route-placeholder";
+import { Button, PageHeader, StatusBadge, EmptyState } from "@/components/ui";
+import { getConversations, createConversation, sendAssistantPrompt } from "@/lib/api";
+import type { AssistantConversation, AssistantMessage } from "@/contracts/workflows";
 
 export default function AssistantPage() {
+  const [conversations, setConversations] = useState<AssistantConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const projectId = "proj-vasavi-food-processing";
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const convos = await getConversations(projectId);
+        setConversations(convos);
+        if (convos.length > 0) {
+          setActiveConversationId(convos[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to load conversations", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  const activeConversation = conversations.find((c) => c.id === activeConversationId);
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [activeConversation?.messages, isSending]);
+
+  const handleNewConversation = async () => {
+    try {
+      const newConvo = await createConversation(projectId);
+      setConversations((prev) => [newConvo, ...prev]);
+      setActiveConversationId(newConvo.id);
+      if (window.innerWidth < 768) {
+        setIsSidebarOpen(false);
+      }
+    } catch (err) {
+      console.error("Failed to create conversation", err);
+    }
+  };
+
+  const handleSend = async (text: string) => {
+    if (!text.trim() || !activeConversationId) return;
+    setPrompt("");
+    setIsSending(true);
+
+    try {
+      const tempMessage: AssistantMessage = {
+        id: "temp-" + Date.now(),
+        role: "user",
+        content: text,
+        timestamp: new Date().toISOString(),
+      };
+      
+      setConversations(prev => prev.map(c => 
+        c.id === activeConversationId 
+          ? { ...c, messages: [...c.messages, tempMessage] }
+          : c
+      ));
+
+      const updated = await sendAssistantPrompt(projectId, activeConversationId, text);
+      setConversations((prev) =>
+        prev.map((c) => (c.id === activeConversationId ? updated : c))
+      );
+    } catch (err) {
+      console.error("Failed to send message", err);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(prompt);
+    }
+  };
+
   return (
     <AppShell>
-      <RoutePlaceholder
+      <PageHeader
         title="AI Assistant"
         description="Ask contextual questions about project approvals, dependency sequencing, and likely next actions."
+        actions={
+          <Button
+            variant="secondary"
+            className="md:hidden"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          >
+            {isSidebarOpen ? "Hide History" : "Show History"}
+          </Button>
+        }
       />
+
+      <div className="flex h-[calc(100vh-220px)] min-h-[500px] gap-6 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden relative">
+        {/* Sidebar */}
+        <div 
+          className={`absolute inset-y-0 left-0 z-10 w-72 flex-col border-r border-slate-200 bg-slate-50 transition-transform md:relative md:flex md:translate-x-0 ${
+            isSidebarOpen ? "translate-x-0 flex" : "-translate-x-full"
+          }`}
+        >
+          <div className="p-4 border-b border-slate-200 bg-white">
+            <Button onClick={handleNewConversation} className="w-full">
+              + New conversation
+            </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {isLoading ? (
+              <div className="animate-pulse space-y-3">
+                <div className="h-12 rounded-lg bg-slate-200"></div>
+                <div className="h-12 rounded-lg bg-slate-200"></div>
+              </div>
+            ) : conversations.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center mt-4">No conversations yet.</p>
+            ) : (
+              conversations.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => {
+                    setActiveConversationId(c.id);
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full text-left p-3 rounded-xl border transition-colors ${
+                    c.id === activeConversationId
+                      ? "bg-[#edf5fa] border-[#dfeaf3] text-[#27628a]"
+                      : "bg-white border-transparent hover:bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  <p className="font-medium text-sm truncate">{c.title || "New Conversation"}</p>
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-xs opacity-70">
+                      {new Date(c.updatedAt).toLocaleDateString()}
+                    </p>
+                    <p className="text-xs opacity-70 bg-black/5 px-1.5 py-0.5 rounded">
+                      {c.messages?.length || 0} msgs
+                    </p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Overlay for mobile sidebar */}
+        {isSidebarOpen && (
+          <div 
+            className="absolute inset-0 bg-slate-900/20 z-0 md:hidden" 
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col bg-white overflow-hidden relative">
+          {isLoading ? (
+             <div className="flex-1 flex items-center justify-center">
+               <div className="animate-pulse flex flex-col items-center gap-4">
+                 <div className="h-8 w-8 bg-[#edf5fa] rounded-full"></div>
+                 <div className="h-4 w-32 bg-slate-200 rounded"></div>
+               </div>
+             </div>
+          ) : !activeConversation ? (
+            <div className="flex-1 flex items-center justify-center p-6">
+              <EmptyState
+                title="No active conversation"
+                description="Select a conversation from the sidebar or start a new one."
+                action={<Button onClick={handleNewConversation}>Start Chat</Button>}
+              />
+            </div>
+          ) : (
+            <>
+              {/* Banner */}
+              <div className="bg-amber-50 text-amber-800 text-xs px-4 py-2 text-center border-b border-amber-100 shrink-0 z-0">
+                AI responses are illustrative and based on demo project data. They do not constitute official advice.
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+                {activeConversation.messages.map((msg, idx) => {
+                  const isUser = msg.role === "user";
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col max-w-[85%] ${
+                        isUser ? "ml-auto items-end" : "mr-auto items-start"
+                      }`}
+                    >
+                      <div
+                        className={`rounded-2xl px-4 py-3 ${
+                          isUser
+                            ? "bg-[#27628a] text-white rounded-br-sm"
+                            : "bg-white border border-slate-200 text-[#172b3a] shadow-sm rounded-bl-sm"
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                      </div>
+
+                      {/* Meta information for assistant messages */}
+                      {!isUser && (msg.sourceTitle || msg.verificationStatus || msg.toolName) && (
+                        <div className="flex flex-wrap items-center gap-2 mt-2 ml-1">
+                          {msg.sourceTitle && (
+                            <span className="text-xs text-slate-500 font-medium">
+                              Source: {msg.sourceTitle}
+                            </span>
+                          )}
+                          {msg.toolName && (
+                            <span className="text-[10px] uppercase tracking-wider bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                              {msg.toolName}
+                            </span>
+                          )}
+                          {msg.verificationStatus && (
+                            <StatusBadge
+                              tone={
+                                msg.verificationStatus === "verified"
+                                  ? "positive"
+                                  : msg.verificationStatus === "illustrative"
+                                  ? "info"
+                                  : msg.verificationStatus === "needs_review"
+                                  ? "warning"
+                                  : "neutral"
+                              }
+                            >
+                              {msg.verificationStatus}
+                            </StatusBadge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Suggested follow-ups (only at the bottom if not sending and last msg is assistant) */}
+                {!isSending && 
+                 activeConversation.messages.length > 0 && 
+                 activeConversation.messages[activeConversation.messages.length - 1].role === "assistant" && 
+                 activeConversation.suggestedFollowUps && 
+                 activeConversation.suggestedFollowUps.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2 max-w-[85%]">
+                    {activeConversation.suggestedFollowUps.map((suggestion, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleSend(suggestion)}
+                        className="text-xs text-[#27628a] bg-[#edf5fa] hover:bg-[#dfeaf3] border border-[#dfeaf3] px-3 py-1.5 rounded-full transition-colors text-left"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {isSending && (
+                  <div className="flex flex-col mr-auto items-start max-w-[85%]">
+                    <div className="bg-slate-50 border border-slate-200 text-slate-500 rounded-2xl rounded-bl-sm px-4 py-3 text-sm italic flex items-center gap-2">
+                      <span className="animate-pulse">Thinking...</span>
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} className="h-px w-full" />
+              </div>
+
+              {/* Composer */}
+              <div className="p-4 bg-white border-t border-slate-200 shrink-0">
+                <div className="relative flex items-end gap-2 max-w-4xl mx-auto">
+                  <textarea
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-[#172b3a] focus:outline-none focus:ring-2 focus:ring-[#27628a] focus:border-transparent resize-none disabled:opacity-50"
+                    placeholder="Ask a question..."
+                    rows={Math.min(prompt.split("\n").length || 1, 5)}
+                    style={{ minHeight: "48px" }}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={isSending}
+                  />
+                  <Button
+                    onClick={() => handleSend(prompt)}
+                    disabled={isSending || !prompt.trim()}
+                    className="shrink-0 h-[48px] px-5"
+                  >
+                    Send
+                  </Button>
+                </div>
+                <div className="text-center mt-2 text-[10px] text-slate-400">
+                  Press Enter to send, Shift + Enter for new line
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </AppShell>
   );
 }
@@ -57,16 +1167,348 @@ export default function AssistantPage() {
 **File:** `app\documents\page.tsx`
 
 ```text
-import { AppShell } from "@/components/app-shell";
-import { RoutePlaceholder } from "@/components/route-placeholder";
+"use client";
+
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { AppShell } from '@/components/app-shell';
+import { OfficerWorkspace } from '@/components/officer-workspace';
+import { getDocuments, getProjects, uploadDocument } from '@/lib/api';
+import type { MockProject } from '@/contracts/project-full';
+import type { ProjectDocument, UploadDocumentInput } from '@/contracts/workflows';
+import { PageHeader, Panel, Button, StatusBadge, EmptyState } from '@/components/ui';
+import { getStoredDemoRole, type DemoRole } from '@/lib/demo-role';
 
 export default function DocumentsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectFilter = searchParams.get('projectId') ?? 'all';
+  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [projects, setProjects] = useState<MockProject[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
+  
+  const [uploadForm, setUploadForm] = useState({
+    name: '',
+    type: '',
+    category: 'Engineering',
+    description: ''
+  });
+  const [isUploading, setIsUploading] = useState(false);
+  const [role, setRole] = useState<DemoRole>('Applicant');
+
+  useEffect(() => setRole(getStoredDemoRole()), []);
+
+  const selectedProject = projects.find((project) => project.id === projectFilter);
+  const uploadProject = selectedProject ?? projects[0];
+
+  const fetchDocuments = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const [docs, projectData] = await Promise.all([
+        getDocuments(projectFilter === 'all' ? undefined : projectFilter),
+        getProjects()
+      ]);
+      setDocuments(docs);
+      setProjects(projectData);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to load documents');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectFilter]);
+
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setIsUploading(true);
+      const input: UploadDocumentInput = {
+        projectId: uploadProject?.id ?? '',
+        projectName: uploadProject?.name ?? '',
+        name: uploadForm.name,
+        category: uploadForm.category,
+        type: uploadForm.type,
+        sizeLabel: '2.5 MB', // mock
+        relatedTaskIds: [],
+        description: uploadForm.description
+      };
+
+      if (!input.projectId) throw new Error('Select a project before uploading a document.');
+      
+      await uploadDocument(input);
+      await fetchDocuments();
+      setIsUploadOpen(false);
+      setUploadForm({ name: '', type: '', category: 'Engineering', description: '' });
+    } catch (err) {
+      console.error(err);
+      alert('Failed to upload document');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const getVerificationTone = (status: string) => {
+    switch (status) {
+      case 'verified': return 'positive';
+      case 'pending': return 'warning';
+      case 'needs_review': return 'info';
+      case 'expired': return 'neutral';
+      default: return 'neutral';
+    }
+  };
+  
+  const getRequirementTone = (status: string) => {
+    switch (status) {
+      case 'satisfied': return 'positive';
+      case 'needs_review': return 'warning';
+      case 'missing': return 'warning';
+      default: return 'neutral';
+    }
+  };
+
+  const filteredDocuments = documents.filter(doc => {
+    const matchesSearch = doc.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          doc.type.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = categoryFilter === 'All' || doc.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  const categories = ['All', 'Engineering', 'Utilities', 'Environmental', 'Safety', 'Operations', 'Other'];
+
+  if (role === 'Officer') {
+    return <OfficerWorkspace mode="documents" />;
+  }
+
   return (
     <AppShell>
-      <RoutePlaceholder
-        title="Documents"
-        description="Manage reusable project documents, compliance evidence, and required supporting artifacts."
-      />
+      <div className="space-y-6">
+        <PageHeader 
+          title="Documents" 
+          description={selectedProject ? `Documents for ${selectedProject.name}.` : "Manage and review documents across all projects."}
+          actions={
+            <Button variant="primary" onClick={() => setIsUploadOpen(true)}>
+              Upload document
+            </Button>
+          }
+        />
+
+        <Panel>
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="Search documents by name or type..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+              />
+            </div>
+            <div className="w-full sm:w-48">
+              <select
+                value={projectFilter}
+                onChange={(e) => router.push(e.target.value === 'all' ? '/documents' : `/documents?projectId=${encodeURIComponent(e.target.value)}`)}
+                className="mb-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+                aria-label="Filter documents by project"
+              >
+                <option value="all">All projects</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+              >
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="animate-pulse rounded-xl border border-slate-200 bg-[#f8fafc] h-32 w-full"></div>
+              ))}
+            </div>
+          ) : error ? (
+            <EmptyState 
+              title="Error loading documents" 
+              description={error} 
+              action={<Button onClick={fetchDocuments}>Retry</Button>}
+            />
+          ) : filteredDocuments.length === 0 ? (
+            <EmptyState 
+              title="No documents found" 
+              description="Upload a new document or adjust your search filters."
+              action={
+                <Button variant="primary" onClick={() => setIsUploadOpen(true)}>
+                  Upload document
+                </Button>
+              }
+            />
+          ) : (
+            <div className="space-y-4">
+              {filteredDocuments.map(doc => (
+                <div key={doc.id} className="rounded-xl border border-slate-200 bg-[#f8fafc] p-4 flex flex-col gap-4">
+                  <div 
+                    className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 cursor-pointer"
+                    onClick={() => setExpandedDocId(expandedDocId === doc.id ? null : doc.id)}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold text-[#172b3a]">{doc.name}</span>
+                        <StatusBadge tone="neutral">{doc.type}</StatusBadge>
+                        <StatusBadge tone="info">{doc.category}</StatusBadge>
+                      </div>
+                      <div className="text-xs text-slate-500 flex gap-4">
+                        <span>Project: {doc.projectName}</span>
+                        <span>Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}</span>
+                        <span>Size: {doc.sizeLabel}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <StatusBadge tone={getVerificationTone(doc.verificationStatus)}>
+                        Verification: {doc.verificationStatus.replace('_', ' ')}
+                      </StatusBadge>
+                      {doc.requirementStatus && (
+                        <StatusBadge tone={getRequirementTone(doc.requirementStatus)}>
+                          Req: {doc.requirementStatus.replace('_', ' ')}
+                        </StatusBadge>
+                      )}
+                    </div>
+                  </div>
+
+                  {expandedDocId === doc.id && (
+                    <div className="mt-2 pt-4 border-t border-slate-200 text-sm grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="font-semibold text-slate-700 mb-2">Details</h4>
+                        <div className="space-y-2 text-slate-600">
+                          <p><span className="font-medium">Description:</span> {doc.description || 'No description provided.'}</p>
+                          <p><span className="font-medium">Document ID:</span> {doc.id}</p>
+                          {doc.expiryAt && <p><span className="font-medium">Expiry:</span> {new Date(doc.expiryAt).toLocaleDateString()}</p>}
+                          <p><span className="font-medium">Source Verification:</span> {doc.sourceVerificationStatus?.replace('_', ' ') || 'Unknown'}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-slate-700 mb-2">Related Tasks</h4>
+                        {doc.relatedTaskIds && doc.relatedTaskIds.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {doc.relatedTaskIds.map(taskId => (
+                              <StatusBadge key={taskId} tone="neutral">{taskId}</StatusBadge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-slate-500 italic">No related tasks</p>
+                        )}
+                        <div className="mt-4 flex gap-2">
+                           <Button variant="secondary">View full document</Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {isUploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="text-xl font-semibold text-[#172b3a] mb-4">Upload Document</h2>
+            <form onSubmit={handleUpload} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">File Name</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. site-plan-v2.pdf"
+                  value={uploadForm.name}
+                  onChange={e => setUploadForm({...uploadForm, name: e.target.value})}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Document Type</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. PDF, CAD"
+                    value={uploadForm.type}
+                    onChange={e => setUploadForm({...uploadForm, type: e.target.value})}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                  <select
+                    value={uploadForm.category}
+                    onChange={e => setUploadForm({...uploadForm, category: e.target.value})}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+                  >
+                    {categories.filter(c => c !== 'All').map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Project</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={uploadProject?.name ?? 'Select a project'}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                <textarea
+                  rows={3}
+                  value={uploadForm.description}
+                  onChange={e => setUploadForm({...uploadForm, description: e.target.value})}
+                  placeholder="Optional details about this document..."
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+                />
+              </div>
+              
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <Button 
+                  type="button" 
+                  variant="secondary" 
+                  onClick={() => setIsUploadOpen(false)}
+                  disabled={isUploading}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  variant="primary"
+                  disabled={isUploading || !uploadForm.name || !uploadForm.type}
+                >
+                  {isUploading ? 'Uploading...' : 'Upload'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
@@ -160,16 +1602,49 @@ export default function RootLayout({
 
 ---
 
+## `app\officer\page.tsx`
+
+**File:** `app\officer\page.tsx`
+
+```text
+import { OfficerWorkspace } from "@/components/officer-workspace";
+import { Suspense } from "react";
+
+export default function OfficerPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <OfficerWorkspace mode="queue" />
+    </Suspense>
+  );
+}
+```
+
+---
+
 ## `app\page.tsx`
 
 **File:** `app\page.tsx`
 
 ```text
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { DashboardContent } from "@/components/dashboard";
+import { OfficerWorkspace } from "@/components/officer-workspace";
 import { Button, PageHeader } from "@/components/ui";
+import { getStoredDemoRole, type DemoRole } from "@/lib/demo-role";
 
 export default function HomePage() {
+  const [role, setRole] = useState<DemoRole>("Applicant");
+
+  useEffect(() => setRole(getStoredDemoRole()), []);
+
+  if (role === "Officer") {
+    return <OfficerWorkspace mode="dashboard" />;
+  }
+
   return (
     <AppShell>
       <PageHeader
@@ -178,12 +1653,407 @@ export default function HomePage() {
         description="Monitor approvals, project milestones, and outstanding regulatory actions for your active industrial portfolio."
         actions={
           <>
-            <Button variant="secondary">Export status</Button>
-            <Button>New project</Button>
+            <Link href="/projects">
+              <Button variant="secondary">View projects</Button>
+            </Link>
+            <Link href="/projects/new">
+              <Button>New project</Button>
+            </Link>
           </>
         }
       />
       <DashboardContent />
+    </AppShell>
+  );
+}
+```
+
+---
+
+## `app\projects\[id]\page.tsx`
+
+**File:** `app\projects\[id]\page.tsx`
+
+```text
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { AppShell } from "@/components/app-shell";
+import { PageHeader, Button, Panel, StatusBadge, EmptyState } from "@/components/ui";
+import { getProject } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
+
+export default function ProjectDetailPage() {
+  const params = useParams();
+  const projectId = typeof params.id === "string" ? params.id : Array.isArray(params.id) ? params.id[0] : "";
+  
+  const [project, setProject] = useState<MockProject | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      if (!projectId) return;
+      try {
+        const data = await getProject(projectId);
+        setProject(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    load();
+  }, [projectId]);
+
+  return (
+    <AppShell>
+      <PageHeader
+        title={project?.name || "Project Details"}
+        description={project ? "Detailed view of the project and its current status." : ""}
+        actions={
+          <Link href="/projects">
+            <Button variant="secondary">Back to Projects</Button>
+          </Link>
+        }
+      />
+
+      <div className="mx-auto max-w-5xl p-6">
+        {isLoading ? (
+          <div className="space-y-6 animate-pulse">
+            <Panel className="h-48"></Panel>
+            <Panel className="h-32"></Panel>
+          </div>
+        ) : !project ? (
+          <EmptyState
+            title="Project not found"
+            description="The project you are looking for does not exist or you do not have access."
+          />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Overview Panel */}
+            <div className="lg:col-span-2 space-y-6">
+              <Panel>
+                <div className="flex justify-between items-start mb-6">
+                  <h3 className="text-xl font-bold text-[#172b3a]">Project Overview</h3>
+                  <StatusBadge tone={project.status === "completed" ? "positive" : project.status === "on_hold" ? "warning" : "info"}>{project.status}</StatusBadge>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-1">Organization</div>
+                    <div className="font-medium text-[#172b3a]">{project.organization || "N/A"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-1">Sector</div>
+                    <div className="font-medium text-[#172b3a]">{project.sector}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-1">Location</div>
+                    <div className="font-medium text-[#172b3a]">{project.location}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-1">Stage</div>
+                    <div className="font-medium text-[#172b3a]">{project.stage.replace('_', ' ')}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-1">Investment</div>
+                    <div className="font-medium text-[#172b3a]">{project.investmentAmount || "Not specified"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-1">Site Status</div>
+                    <div className="font-medium text-[#172b3a]">{project.siteStatus.replace('_', ' ')}</div>
+                  </div>
+                </div>
+
+                {project.description && (
+                  <div className="mt-6 pt-6 border-t border-slate-100">
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-2">Description</div>
+                    <p className="text-sm text-slate-700">{project.description}</p>
+                  </div>
+                )}
+              </Panel>
+
+              <Panel>
+                <h3 className="text-lg font-bold text-[#172b3a] mb-4">Approval Progress</h3>
+                <div className="mb-2 flex justify-between text-sm text-[#172b3a]">
+                  <span>Overall Completion</span>
+                  <span className="font-bold">{project.progress}%</span>
+                </div>
+                <div className="h-3 rounded-full bg-slate-200 overflow-hidden mb-4">
+                  <div className="h-full bg-[#27628a]" style={{ width: `${project.progress}%` }} />
+                </div>
+                <p className="text-sm text-slate-500">
+                  {project.completedApprovals} of {project.approvalCount} required approvals have been completed.
+                </p>
+              </Panel>
+            </div>
+
+            {/* Quick Links Sidebar */}
+            <div className="space-y-6">
+              <Panel className="bg-[#f8fafc]">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-[#172b3a] mb-4">Quick Links</h3>
+                <div className="space-y-3 flex flex-col">
+                  <Link href={`/roadmap?projectId=${encodeURIComponent(project.id)}`}>
+                    <Button variant="secondary" className="w-full justify-start text-left bg-white">
+                      View Roadmap
+                    </Button>
+                  </Link>
+                  <Link href={`/documents?projectId=${encodeURIComponent(project.id)}`}>
+                    <Button variant="secondary" className="w-full justify-start text-left bg-white">
+                      View Documents
+                    </Button>
+                  </Link>
+                  <Link href={`/applications?projectId=${encodeURIComponent(project.id)}`}>
+                    <Button variant="secondary" className="w-full justify-start text-left bg-white">
+                      View Applications
+                    </Button>
+                  </Link>
+                </div>
+              </Panel>
+              
+              <Panel>
+                <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-1">Created At</div>
+                <div className="text-sm text-[#172b3a] mb-4">{new Date(project.createdAt).toLocaleDateString()}</div>
+                
+                <div className="text-xs uppercase tracking-[0.12em] text-slate-500 mb-1">Last Updated</div>
+                <div className="text-sm text-[#172b3a]">{new Date(project.updatedAt).toLocaleDateString()}</div>
+              </Panel>
+            </div>
+
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}
+```
+
+---
+
+## `app\projects\new\page.tsx`
+
+**File:** `app\projects\new\page.tsx`
+
+```text
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/app-shell";
+import { PageHeader, Button, Panel } from "@/components/ui";
+import { createProject } from "@/lib/api";
+import type { CreateProjectInput, ProjectStage, SiteStatus } from "@/contracts/project-full";
+
+export default function NewProjectPage() {
+  const router = useRouter();
+  
+  const [formData, setFormData] = useState<CreateProjectInput>({
+    name: "",
+    organization: "",
+    sector: "Manufacturing",
+    description: "",
+    location: "",
+    stage: "planning" as ProjectStage,
+    investmentAmount: "",
+    siteStatus: "unallocated" as SiteStatus,
+  });
+
+  const [errors, setErrors] = useState<Partial<Record<keyof CreateProjectInput, string>>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  const validate = () => {
+    const newErrors: Partial<Record<keyof CreateProjectInput, string>> = {};
+    if (!formData.name.trim()) newErrors.name = "Project name is required";
+    if (!formData.organization.trim()) newErrors.organization = "Organization name is required";
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    
+    setIsSubmitting(true);
+    try {
+      await createProject(formData);
+      setIsSuccess(true);
+      setTimeout(() => {
+        router.push("/projects");
+      }, 1500);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create project");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (errors[name as keyof CreateProjectInput]) {
+      setErrors(prev => ({ ...prev, [name]: undefined }));
+    }
+  };
+
+  const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#172b3a] focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20";
+  const labelClass = "block text-sm font-medium text-[#172b3a] mb-1.5";
+  const errorClass = "text-xs text-red-600 mt-1";
+
+  return (
+    <AppShell>
+      <PageHeader
+        title="New Project"
+        description="Create a new industrial project profile."
+      />
+
+      <div className="mx-auto max-w-3xl p-6">
+        {isSuccess ? (
+          <Panel className="text-center py-12">
+            <h2 className="text-2xl font-bold text-[#27628a] mb-2">Project Created Successfully!</h2>
+            <p className="text-slate-500">Redirecting to projects list...</p>
+          </Panel>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <Panel>
+              <h3 className="text-lg font-bold text-[#172b3a] mb-4 pb-2 border-b border-slate-100">Basic Information</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className={labelClass}>Project Name *</label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    className={inputClass}
+                    placeholder="e.g. Apex Textile Expansion"
+                  />
+                  {errors.name && <p className={errorClass}>{errors.name}</p>}
+                </div>
+                
+                <div>
+                  <label className={labelClass}>Organization Name *</label>
+                  <input
+                    type="text"
+                    name="organization"
+                    value={formData.organization}
+                    onChange={handleChange}
+                    className={inputClass}
+                    placeholder="e.g. Apex Industries Ltd"
+                  />
+                  {errors.organization && <p className={errorClass}>{errors.organization}</p>}
+                </div>
+
+                <div>
+                  <label className={labelClass}>Industry Sector</label>
+                  <select
+                    name="sector"
+                    value={formData.sector}
+                    onChange={handleChange}
+                    className={inputClass}
+                  >
+                    <option value="Manufacturing">Manufacturing</option>
+                    <option value="Food processing">Food processing</option>
+                    <option value="Textiles">Textiles</option>
+                    <option value="Metals">Metals</option>
+                    <option value="Electronics">Electronics</option>
+                    <option value="Automotive">Automotive</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Description</label>
+                  <textarea
+                    name="description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    className={`${inputClass} min-h-[80px] resize-y`}
+                    placeholder="Brief description of the project"
+                  />
+                </div>
+              </div>
+            </Panel>
+
+            <Panel>
+              <h3 className="text-lg font-bold text-[#172b3a] mb-4 pb-2 border-b border-slate-100">Location</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className={labelClass}>State / District / City</label>
+                  <input
+                    type="text"
+                    name="location"
+                    value={formData.location}
+                    onChange={handleChange}
+                    className={inputClass}
+                    placeholder="e.g. Vadodara, Gujarat"
+                  />
+                </div>
+              </div>
+            </Panel>
+
+            <Panel>
+              <h3 className="text-lg font-bold text-[#172b3a] mb-4 pb-2 border-b border-slate-100">Project Details</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className={labelClass}>Project Stage</label>
+                  <select
+                    name="stage"
+                    value={formData.stage}
+                    onChange={handleChange}
+                    className={inputClass}
+                  >
+                    <option value="planning">Planning</option>
+                    <option value="land_acquisition">Land Acquisition</option>
+                    <option value="construction">Construction</option>
+                    <option value="pre_operational">Pre-operational</option>
+                    <option value="operational">Operational</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Investment Amount</label>
+                  <input
+                    type="text"
+                    name="investmentAmount"
+                    value={formData.investmentAmount}
+                    onChange={handleChange}
+                    className={inputClass}
+                    placeholder="e.g. ₹50 Cr, $10M"
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>Site Status</label>
+                  <select
+                    name="siteStatus"
+                    value={formData.siteStatus}
+                    onChange={handleChange}
+                    className={inputClass}
+                  >
+                    <option value="unallocated">Unallocated</option>
+                    <option value="allocated">Allocated</option>
+                    <option value="possession_taken">Possession Taken</option>
+                    <option value="developed">Developed</option>
+                  </select>
+                </div>
+              </div>
+            </Panel>
+
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={() => router.push("/projects")}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={isSubmitting}>
+                {isSubmitting ? "Creating..." : "Create Project"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
     </AppShell>
   );
 }
@@ -196,16 +2066,108 @@ export default function HomePage() {
 **File:** `app\projects\page.tsx`
 
 ```text
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
-import { RoutePlaceholder } from "@/components/route-placeholder";
+import { PageHeader, Button, Panel, StatusBadge, EmptyState } from "@/components/ui";
+import { getProjects } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
 
 export default function ProjectsPage() {
+  const [projects, setProjects] = useState<MockProject[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await getProjects();
+        setProjects(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const filteredProjects = projects.filter((p) => {
+    const q = search.toLowerCase();
+    return p.name.toLowerCase().includes(q) || p.sector.toLowerCase().includes(q) || p.location.toLowerCase().includes(q);
+  });
+
   return (
     <AppShell>
-      <RoutePlaceholder
+      <PageHeader
         title="Projects"
         description="Review active industrial projects, their milestones, and readiness across the approval lifecycle."
+        actions={
+          <Link href="/projects/new">
+            <Button variant="primary">New project</Button>
+          </Link>
+        }
       />
+
+      <div className="mx-auto max-w-5xl p-6">
+        <Panel className="mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <input
+            type="text"
+            placeholder="Search by project name, sector, or location..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full sm:max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#172b3a] focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+          />
+        </Panel>
+
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-pulse">
+            {[1, 2, 3, 4].map((i) => (
+              <Panel key={i} className="h-48"></Panel>
+            ))}
+          </div>
+        ) : filteredProjects.length === 0 ? (
+          <EmptyState
+            title="No projects found"
+            description="Adjust your search or create a new project."
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {filteredProjects.map((project) => (
+              <Link key={project.id} href={`/projects/${project.id}`} className="block group">
+                <Panel className="h-full transition-shadow hover:shadow-md cursor-pointer">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-bold text-[#172b3a] text-lg group-hover:text-[#27628a] transition-colors">{project.name}</h3>
+                    <StatusBadge tone={project.status === "completed" ? "positive" : project.status === "on_hold" ? "warning" : "info"}>{project.status}</StatusBadge>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 mb-4 text-sm text-slate-500">
+                    <span className="bg-slate-100 px-2 py-1 rounded">{project.sector}</span>
+                    <span className="bg-slate-100 px-2 py-1 rounded">{project.location}</span>
+                  </div>
+
+                  <div className="mb-4">
+                    <div className="flex justify-between text-xs uppercase tracking-[0.12em] text-slate-500 mb-1.5">
+                      <span>{project.stage.replace('_', ' ')}</span>
+                      <span>{project.progress}%</span>
+                    </div>
+                    <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full bg-[#27628a]" style={{ width: `${project.progress}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between text-xs text-slate-500 items-center">
+                    <span>{project.completedApprovals}/{project.approvalCount} approvals completed</span>
+                    <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
+                  </div>
+                </Panel>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
     </AppShell>
   );
 }
@@ -218,16 +2180,181 @@ export default function ProjectsPage() {
 **File:** `app\regulatory-updates\page.tsx`
 
 ```text
+"use client";
+
+import { useEffect, useState, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
-import { RoutePlaceholder } from "@/components/route-placeholder";
+import { PageHeader, Panel, Button, StatusBadge, EmptyState } from "@/components/ui";
+import { getRegulatoryUpdates } from "@/lib/api";
+import type { RegulatoryUpdate } from "@/contracts/workflows";
+
+function mapStatus(status: string) {
+  if (status === "pending") return "warning";
+  if (status === "reviewed") return "positive";
+  if (status === "flagged") return "info";
+  return "neutral";
+}
 
 export default function RegulatoryUpdatesPage() {
+  const [updates, setUpdates] = useState<RegulatoryUpdate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    getRegulatoryUpdates()
+      .then((data) => {
+        setUpdates(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, []);
+
+  const toggleExpand = (id: string) => {
+    const next = new Set(expandedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setExpandedIds(next);
+  };
+
+  const filteredUpdates = useMemo(() => {
+    return updates.filter((u) => {
+      // Handle mock data incompatibilities
+      const anyU = u as unknown as Record<string, string>;
+      const titleMatch = u.title.toLowerCase().includes(search.toLowerCase());
+      const summaryMatch = u.summary.toLowerCase().includes(search.toLowerCase());
+      if (search && !titleMatch && !summaryMatch) return false;
+
+      if (statusFilter !== "All" && u.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+      
+      const areas: string[] = u.affectedAreas || (anyU.impact ? [anyU.impact] : []);
+      if (categoryFilter !== "All") {
+         const matches = areas.some(a => a.toLowerCase() === categoryFilter.toLowerCase());
+         const titleHasCategory = u.title.toLowerCase().includes(categoryFilter.toLowerCase());
+         const summaryHasCategory = u.summary.toLowerCase().includes(categoryFilter.toLowerCase());
+         if (!matches && !titleHasCategory && !summaryHasCategory) return false;
+      }
+
+      return true;
+    });
+  }, [updates, search, categoryFilter, statusFilter]);
+
   return (
     <AppShell>
-      <RoutePlaceholder
-        title="Regulatory Updates"
-        description="Review policy changes, guidance updates, and source references relevant to your projects."
+      <div className="mb-6 rounded-xl bg-[#edf5fa] p-4 text-sm text-[#27628a] ring-1 ring-[#dfeaf3]">
+        These updates are illustrative demo content and do not represent official regulatory announcements.
+      </div>
+
+      <PageHeader 
+        title="Regulatory Updates" 
+        description="Review policy changes, guidance updates, and source references relevant to your projects." 
       />
+
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row">
+        <input 
+          type="text"
+          placeholder="Search updates..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-1 focus:ring-[#27628a]"
+        />
+        <select 
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-1 focus:ring-[#27628a]"
+        >
+          <option value="All">All Categories</option>
+          <option value="Environment">Environment</option>
+          <option value="Safety">Safety</option>
+          <option value="Licensing">Licensing</option>
+          <option value="Trade">Trade</option>
+          <option value="Standards">Standards</option>
+        </select>
+        <select 
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-1 focus:ring-[#27628a]"
+        >
+          <option value="All">All Statuses</option>
+          <option value="Pending">Pending</option>
+          <option value="Reviewed">Reviewed</option>
+          <option value="Flagged">Flagged</option>
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="space-y-4 animate-pulse">
+          <div className="h-24 rounded-2xl bg-slate-200" />
+          <div className="h-24 rounded-2xl bg-slate-200" />
+        </div>
+      ) : filteredUpdates.length === 0 ? (
+        <EmptyState 
+          title="No updates found"
+          description="Try adjusting your filters or search query."
+        />
+      ) : (
+        <div className="space-y-4">
+          {filteredUpdates.map((u) => {
+            const anyU = u as unknown as Record<string, string>;
+            const source = u.source || anyU.authority || "Unknown Source";
+            const publishedAt = u.publishedAt || anyU.date || "Unknown Date";
+            const areas: string[] = u.affectedAreas || (anyU.impact ? [anyU.impact] : []);
+            const isExpanded = expandedIds.has(u.id);
+
+            return (
+              <Panel key={u.id}>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-base font-bold text-[#172b3a]">{u.title}</h3>
+                      <StatusBadge tone={mapStatus(u.status) as "positive" | "warning" | "neutral" | "info"}>{u.status.charAt(0).toUpperCase() + u.status.slice(1)}</StatusBadge>
+                    </div>
+                    <p className="text-sm text-slate-500">{source} • {publishedAt}</p>
+                    {areas.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {areas.map((area, idx) => (
+                          <span key={idx} className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                            {area}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p className="mt-2 text-sm text-slate-700">
+                      {isExpanded ? u.summary : (u.summary.length > 100 ? u.summary.slice(0, 100) + "..." : u.summary)}
+                    </p>
+                    {isExpanded && (
+                      <div className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="font-semibold">Source Verification:</span>
+                          <StatusBadge tone={u.sourceVerificationStatus === 'verified' ? 'positive' : 'warning' as "positive" | "warning" | "neutral" | "info"}>
+                            {u.sourceVerificationStatus || "illustrative"}
+                          </StatusBadge>
+                        </div>
+                        {u.note && (
+                          <div className="mt-2">
+                            <span className="font-semibold">Note:</span> {u.note}
+                          </div>
+                        )}
+                        <div className="mt-2">
+                          <span className="font-semibold">Affected Areas:</span> {areas.length > 0 ? areas.join(", ") : "None specified"}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <Button variant="ghost" onClick={() => toggleExpand(u.id)}>
+                    {isExpanded ? "Show Less" : "Show More"}
+                  </Button>
+                </div>
+              </Panel>
+            );
+          })}
+        </div>
+      )}
     </AppShell>
   );
 }
@@ -322,34 +2449,31 @@ export default {
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui";
-
-const navItems = [
-  { href: "/", label: "Dashboard" },
-  { href: "/projects", label: "Projects" },
-  { href: "/roadmap", label: "Approval Roadmap" },
-  { href: "/documents", label: "Documents" },
-  { href: "/applications", label: "Applications" },
-  { href: "/assistant", label: "AI Assistant" },
-  { href: "/regulatory-updates", label: "Regulatory Updates" }
-];
+import { getStoredDemoRole, setStoredDemoRole, getRoleLabel, getRoleUser, DEMO_ROLE_OPTIONS, type DemoRole } from "@/lib/demo-role";
+import { getVisibleNavItems } from "@/lib/mock-permissions";
 
 function Sidebar({
   isMobileOpen,
-  onClose
+  onClose,
+  currentRole,
+  onRoleChange
 }: {
   isMobileOpen: boolean;
   onClose: () => void;
+  currentRole: DemoRole;
+  onRoleChange: (role: DemoRole) => void;
 }) {
   const pathname = usePathname();
+  const navItems = getVisibleNavItems(currentRole);
 
   return (
     <aside
       className={[
-        "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-slate-200 bg-[#172b3a] text-slate-100 transition-transform duration-200 lg:static lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-col overflow-y-auto border-r border-slate-200 bg-[#172b3a] text-slate-100 transition-transform duration-200 lg:static lg:translate-x-0",
         isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       ].join(" ")}
     >
@@ -391,33 +2515,63 @@ function Sidebar({
 
       <div className="border-t border-white/10 p-4">
         <div className="rounded-xl bg-white/5 p-3">
-          <p className="text-xs uppercase tracking-[0.18em] text-sky-200">Current role</p>
-          <p className="mt-2 text-sm font-medium text-white">Applicant workspace</p>
+          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-sky-200">Current role</p>
+          <div className="flex flex-col gap-1">
+            {DEMO_ROLE_OPTIONS.map((role) => (
+              <button
+                key={role}
+                onClick={() => {
+                  onRoleChange(role);
+                  onClose();
+                }}
+                className={[
+                  "text-left rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
+                  currentRole === role
+                    ? "bg-[#edf5fa] text-[#172b3a]"
+                    : "text-slate-200 hover:bg-white/10 hover:text-white"
+                ].join(" ")}
+              >
+                {getRoleLabel(role)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </aside>
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, forcedRole }: { children: React.ReactNode; forcedRole?: DemoRole }) {
+  const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [currentRole, setCurrentRole] = useState<DemoRole>(forcedRole ?? "Applicant");
 
-  const user = useMemo(
-    () => ({
-      name: "Asha Nair",
-      role: "Applicant",
-      avatar: "AN"
-    }),
-    []
-  );
+  useEffect(() => {
+    setCurrentRole(forcedRole ?? getStoredDemoRole());
+  }, [forcedRole]);
+
+  const handleRoleChange = (role: DemoRole) => {
+    const leavingOfficer = currentRole === "Officer" && role !== "Officer";
+    setCurrentRole(role);
+    setStoredDemoRole(role);
+    if (role === "Officer") router.push("/officer");
+    else if (leavingOfficer) router.push("/");
+  };
+
+  const user = getRoleUser(currentRole);
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb] text-[#172b3a]">
-      <div className="flex min-h-screen">
-        <Sidebar isMobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+    <div className="h-screen overflow-hidden bg-[#f7f9fb] text-[#172b3a]">
+      <div className="flex h-full min-h-0">
+        <Sidebar 
+          isMobileOpen={mobileNavOpen} 
+          onClose={() => setMobileNavOpen(false)} 
+          currentRole={currentRole}
+          onRoleChange={handleRoleChange}
+        />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="z-30 shrink-0 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
             <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
               <div className="flex items-center gap-3">
                 <Button
@@ -451,14 +2605,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                   <div className="hidden text-left md:block">
                     <p className="text-sm font-medium text-[#172b3a]">{user.name}</p>
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">{user.role}</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">{currentRole}</p>
                   </div>
                 </div>
               </div>
             </div>
           </header>
 
-          <main className="flex-1">
+          <main className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
               {children}
             </div>
@@ -487,13 +2641,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button, EmptyState, PageHeader, Panel, StatusBadge } from "@/components/ui";
 import type { ApplicationRecord, ApplicationStatus } from "@/contracts/workflows";
-import { createApplication, getApplications, updateApplicationStatus } from "@/lib/api";
-
-const PROJECT_ID = "proj-vasavi-food-processing";
-const PROJECT_NAME = "Vasavi Food Processing Unit";
+import { createApplication, getApplications, getProjects, updateApplicationStatus } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
 
 const statusMeta: Record<ApplicationStatus, { label: string; tone: "positive" | "warning" | "neutral" | "info" }> = {
   draft: { label: "Draft", tone: "neutral" },
@@ -518,21 +2671,31 @@ function formatDate(value?: string | null) {
 }
 
 export function ApplicationWorkspace() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectFilter = searchParams.get("projectId") ?? "all";
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+  const [projects, setProjects] = useState<MockProject[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ApplicationStatus>("all");
   const [draftName, setDraftName] = useState("");
+  const activeProjectId = projectFilter === "all" ? projects[0]?.id ?? "" : projectFilter;
+  const selectedProject = projects.find((project) => project.id === projectFilter);
 
   useEffect(() => {
     let active = true;
     async function load() {
       try {
-        const result = await getApplications(PROJECT_ID);
+        const [result, projectData] = await Promise.all([
+          getApplications(projectFilter === "all" ? undefined : projectFilter),
+          getProjects()
+        ]);
         if (active) {
           setApplications(result);
+          setProjects(projectData);
           setSelectedId((current) => current ?? result[0]?.id ?? null);
         }
       } catch (loadError) {
@@ -548,7 +2711,7 @@ export function ApplicationWorkspace() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [projectFilter]);
 
   const filtered = useMemo(
     () =>
@@ -573,7 +2736,11 @@ export function ApplicationWorkspace() {
   async function handleCreateDraft() {
     const name = draftName.trim() || `Draft application ${applications.length + 1}`;
     try {
-      const next = await createApplication(PROJECT_ID, name);
+      if (!activeProjectId) {
+        setError("Select a project before creating an application draft.");
+        return;
+      }
+      const next = await createApplication(activeProjectId, name);
       setApplications(next);
       setSelectedId(next[0]?.id ?? null);
       setDraftName("");
@@ -584,7 +2751,7 @@ export function ApplicationWorkspace() {
 
   async function handleStatusUpdate(applicationId: string, status: ApplicationStatus, messageOverride?: string) {
     try {
-      const next = await updateApplicationStatus(PROJECT_ID, applicationId, status, messageOverride ?? `Mock status update to ${status}.`);
+      const next = await updateApplicationStatus(selectedApplication?.projectId ?? activeProjectId, applicationId, status, messageOverride ?? `Mock status update to ${status}.`);
       setApplications(next);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "The status update could not be applied.");
@@ -602,9 +2769,9 @@ export function ApplicationWorkspace() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Applications"
+        eyebrow={selectedProject ? `Project · ${selectedProject.name}` : "All projects"}
         title="Application tracker"
-        description="Track mock submissions, review status, and stay aligned with the next required actions."
+        description={selectedProject ? `Applications associated with ${selectedProject.name}.` : "Track applications across all projects and filter by project, status, or search text."}
         actions={<StatusBadge tone="info">Illustrative</StatusBadge>}
       />
 
@@ -618,6 +2785,15 @@ export function ApplicationWorkspace() {
                 placeholder="Search by application or authority"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a]"
               />
+              <select
+                aria-label="Filter by project"
+                value={projectFilter}
+                onChange={(event) => router.push(event.target.value === "all" ? "/applications" : `/applications?projectId=${encodeURIComponent(event.target.value)}`)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a]"
+              >
+                <option value="all">All projects</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
               <select
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
@@ -1254,13 +3430,12 @@ export function DashboardContent() {
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button, EmptyState, PageHeader, Panel, StatusBadge } from "@/components/ui";
 import type { ProjectDocument } from "@/contracts/workflows";
-import { getDocuments, uploadDocument } from "@/lib/api";
-
-const PROJECT_ID = "proj-vasavi-food-processing";
-const PROJECT_NAME = "Vasavi Food Processing Unit";
+import { getDocuments, getProjects, uploadDocument } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
 
 const documentStatusMeta: Record<ProjectDocument["verificationStatus"], string> = {
   verified: "Verified",
@@ -1287,7 +3462,11 @@ function formatDate(value?: string | null) {
 }
 
 export function DocumentsWorkspace() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectFilter = searchParams.get("projectId") ?? "all";
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [projects, setProjects] = useState<MockProject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -1305,14 +3484,21 @@ export function DocumentsWorkspace() {
     relatedTaskIds: "site-layout-plan"
   });
 
+  const uploadProjectId = projectFilter === "all" ? projects[0]?.id ?? "" : projectFilter;
+  const selectedProject = projects.find((project) => project.id === projectFilter);
+
   useEffect(() => {
     let active = true;
 
     async function load() {
       try {
-        const data = await getDocuments(PROJECT_ID);
+        const [data, projectData] = await Promise.all([
+          getDocuments(projectFilter === "all" ? undefined : projectFilter),
+          getProjects()
+        ]);
         if (active) {
           setDocuments(data);
+          setProjects(projectData);
           setSelectedId((current) => current ?? data[0]?.id ?? null);
         }
       } catch (loadError) {
@@ -1328,7 +3514,7 @@ export function DocumentsWorkspace() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [projectFilter]);
 
   const categories = useMemo(
     () => ["all", ...new Set(documents.map((doc) => doc.category))],
@@ -1361,9 +3547,14 @@ export function DocumentsWorkspace() {
     setUploadError(null);
 
     try {
+      const project = projects.find((entry) => entry.id === uploadProjectId);
+      if (!project) {
+        setUploadError("Select a project before uploading a document.");
+        return;
+      }
       const nextDocuments = await uploadDocument({
-        projectId: PROJECT_ID,
-        projectName: PROJECT_NAME,
+        projectId: project.id,
+        projectName: project.name,
         name: form.name,
         category: form.category,
         type: form.type,
@@ -1372,7 +3563,7 @@ export function DocumentsWorkspace() {
         expiryAt: form.expiryAt ? new Date(form.expiryAt).toISOString() : null,
         description: "Simulated upload captured through the browser-side demo workflow."
       });
-      setDocuments(nextDocuments);
+      setDocuments((current) => projectFilter === project.id ? nextDocuments : [nextDocuments[0], ...current]);
       setSelectedId(nextDocuments[0]?.id ?? null);
       setForm({
         name: "",
@@ -1400,9 +3591,9 @@ export function DocumentsWorkspace() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Projects"
+        eyebrow={selectedProject ? `Project · ${selectedProject.name}` : "All projects"}
         title="Document library"
-        description="Browse uploaded project artifacts, review requirement coverage, and simulate the next evidence updates."
+        description={selectedProject ? `Documents associated with ${selectedProject.name}.` : "Browse uploaded project artifacts across all projects and filter by project when needed."}
         actions={<StatusBadge tone="info">Illustrative data</StatusBadge>}
       />
 
@@ -1416,6 +3607,15 @@ export function DocumentsWorkspace() {
                 placeholder="Search by title or category"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a]"
               />
+              <select
+                aria-label="Filter by project"
+                value={projectFilter}
+                onChange={(event) => router.push(event.target.value === "all" ? "/documents" : `/documents?projectId=${encodeURIComponent(event.target.value)}`)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a]"
+              >
+                <option value="all">All projects</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
               <select
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
@@ -1477,6 +3677,17 @@ export function DocumentsWorkspace() {
         <div className="space-y-4">
           <Panel title="Upload evidence">
             <form className="space-y-4" onSubmit={handleUpload}>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-[#172b3a]">Project</label>
+                <select
+                  value={uploadProjectId}
+                  disabled={projectFilter !== "all"}
+                  onChange={(event) => router.push(`/documents?projectId=${encodeURIComponent(event.target.value)}`)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a] disabled:opacity-70"
+                >
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-[#172b3a]">Document title</label>
                 <input
@@ -1601,6 +3812,171 @@ export function DocumentsWorkspace() {
 
 ---
 
+## `src\components\officer-workspace.tsx`
+
+**File:** `src\components\officer-workspace.tsx`
+
+```text
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+
+import { AppShell } from "@/components/app-shell";
+import { Button, EmptyState, PageHeader, Panel, StatusBadge } from "@/components/ui";
+import type { MockProject } from "@/contracts/project-full";
+import type { ApplicationRecord, ApplicationStatus, ProjectDocument, DocumentStatus } from "@/contracts/workflows";
+import { getApplications, getDocuments, getProjects, updateApplicationStatus, updateDocumentStatus } from "@/lib/api";
+
+type OfficerMode = "dashboard" | "queue" | "applications" | "documents";
+type SlaState = "within" | "approaching" | "overdue";
+
+const statusTone: Record<ApplicationStatus, "positive" | "warning" | "neutral" | "info"> = {
+  draft: "neutral", ready: "info", submitted: "info", under_review: "warning", changes_requested: "warning", approved: "positive", rejected: "warning", cancelled: "neutral"
+};
+
+function statusLabel(status: string) {
+  return status.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function slaState(application: ApplicationRecord): SlaState {
+  if (!application.submittedAt || application.status === "approved" || application.status === "rejected") return "within";
+  const age = Date.now() - new Date(application.submittedAt).getTime();
+  if (age > 10 * 24 * 60 * 60 * 1000) return "overdue";
+  if (age > 5 * 24 * 60 * 60 * 1000) return "approaching";
+  return "within";
+}
+
+function slaLabel(state: SlaState) {
+  return state === "overdue" ? "Overdue" : state === "approaching" ? "Approaching SLA" : "Within SLA";
+}
+
+function slaTone(state: SlaState): "positive" | "warning" | "neutral" {
+  return state === "overdue" ? "warning" : state === "approaching" ? "warning" : "positive";
+}
+
+export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedApplicationId = searchParams.get("applicationId");
+  const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [projects, setProjects] = useState<MockProject[]>([]);
+  const [selectedApplicationId, setSelectedApplicationId] = useState(requestedApplicationId);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [slaFilter, setSlaFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("sla");
+  const [notice, setNotice] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [applicationData, documentData, projectData] = await Promise.all([getApplications(), getDocuments(), getProjects()]);
+      setApplications(applicationData);
+      setDocuments(documentData);
+      setProjects(projectData);
+      setSelectedApplicationId((current) => current && applicationData.some((item) => item.id === current) ? current : applicationData[0]?.id ?? null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "The officer workspace could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  const departments = useMemo(() => ["all", ...new Set(applications.map((application) => application.authority))], [applications]);
+  const filteredApplications = useMemo(() => applications
+    .filter((application) => {
+      const query = `${application.id} ${application.referenceNumber ?? ""} ${application.name} ${application.projectName} ${application.authority}`.toLowerCase();
+      const matchesSearch = query.includes(search.toLowerCase());
+      const matchesStatus = statusFilter === "all" || application.status === statusFilter;
+      const matchesDepartment = departmentFilter === "all" || application.authority === departmentFilter;
+      const matchesSla = slaFilter === "all" || slaState(application) === slaFilter;
+      return matchesSearch && matchesStatus && matchesDepartment && matchesSla;
+    })
+    .sort((left, right) => sortBy === "recent" ? new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime() : slaState(left).localeCompare(slaState(right))),
+    [applications, search, statusFilter, departmentFilter, slaFilter, sortBy]
+  );
+  const selectedApplication = applications.find((application) => application.id === selectedApplicationId) ?? null;
+  const selectedDocuments = selectedApplication ? documents.filter((document) => selectedApplication.documents.includes(document.id)) : [];
+  const pendingDocuments = documents.filter((document) => document.verificationStatus === "pending" || document.verificationStatus === "needs_review");
+  const attentionApplications = applications.filter((application) => ["under_review", "submitted", "changes_requested"].includes(application.status) || slaState(application) !== "within");
+
+  async function handleApplicationAction(status: ApplicationStatus, message: string) {
+    if (!selectedApplication) return;
+    if (status === "approved" && !window.confirm("Approve this illustrative application?")) return;
+    if (status === "rejected") {
+      const reason = window.prompt("Enter a rejection reason:", "Required evidence remains incomplete.");
+      if (!reason) return;
+      message = `Application rejected: ${reason}`;
+    }
+    const next = await updateApplicationStatus(selectedApplication.projectId, selectedApplication.id, status, message);
+    setApplications((current) => current.map((application) => next.find((item) => item.id === application.id) ?? application));
+    setNotice(`Application ${statusLabel(status).toLowerCase()} and timeline updated.`);
+  }
+
+  async function handleDocumentAction(document: ProjectDocument, status: DocumentStatus) {
+    const reason = status === "needs_review" ? window.prompt("Enter the correction reason:", "Please provide a clearer signed version of this document.") : undefined;
+    if (status === "needs_review" && !reason) return;
+    const nextDocuments = await updateDocumentStatus(document.id, status, reason ?? undefined);
+    setDocuments(nextDocuments);
+    setNotice(status === "verified" ? `${document.name} verified.` : `${document.name} marked for correction.`);
+    await load();
+  }
+
+  function openApplication(applicationId: string) {
+    setSelectedApplicationId(applicationId);
+    router.push(`/officer?applicationId=${encodeURIComponent(applicationId)}`);
+  }
+
+  if (loading) return <AppShell forcedRole="Officer"><Panel><div className="animate-pulse py-12 text-center text-sm text-slate-500">Loading officer workspace…</div></Panel></AppShell>;
+  if (error) return <AppShell forcedRole="Officer"><EmptyState title="Officer workspace unavailable" description={error} action={<Button onClick={() => void load()}>Retry</Button>} /></AppShell>;
+
+  const title = mode === "dashboard" ? "Officer dashboard" : mode === "queue" ? "Review queue" : mode === "applications" ? "Applications" : "Document review";
+  const description = mode === "dashboard" ? "Review workload, deadlines, and application activity requiring officer attention." : mode === "queue" ? "Prioritize assigned applications by status, department, and SLA state." : mode === "applications" ? "Inspect application records and open the detailed review workspace." : "Review applicant-submitted documents linked to applications and projects.";
+
+  return <AppShell forcedRole="Officer">
+    <div className="space-y-6">
+      <PageHeader eyebrow="Government Officer" title={title} description={description} actions={<StatusBadge tone="info">Illustrative officer workspace</StatusBadge>} />
+      {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
+
+      {mode === "dashboard" && <>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+          {[{ label: "Assigned Applications", value: applications.length }, { label: "Pending Document Reviews", value: pendingDocuments.length }, { label: "Approaching SLA", value: applications.filter((application) => slaState(application) === "approaching").length }, { label: "Overdue Applications", value: applications.filter((application) => slaState(application) === "overdue").length }, { label: "Upcoming Inspections", value: 0 }, { label: "Open Grievances", value: 0 }].map((metric) => <Panel key={metric.label} className="p-4"><p className="text-xs uppercase tracking-[0.12em] text-slate-500">{metric.label}</p><p className="mt-3 text-3xl font-semibold text-[#172b3a]">{metric.value}</p></Panel>)}
+        </div>
+        <div className="grid gap-6 xl:grid-cols-2">
+          <Panel title="Applications requiring attention"><div className="space-y-3">{attentionApplications.length === 0 ? <p className="text-sm text-slate-500">No applications require attention.</p> : attentionApplications.slice(0, 6).map((application) => <button key={application.id} onClick={() => openApplication(application.id)} className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-left hover:bg-white"><div className="flex items-center justify-between gap-3"><p className="font-medium text-[#172b3a]">{application.referenceNumber ?? application.id}</p><StatusBadge tone={slaTone(slaState(application))}>{slaLabel(slaState(application))}</StatusBadge></div><p className="mt-1 text-sm text-slate-600">{application.projectName} · {application.name}</p><p className="mt-1 text-xs text-slate-500">{application.authority} · {statusLabel(application.status)}</p></button>)}</div></Panel>
+          <Panel title="Recent officer activity"><div className="space-y-3">{applications.flatMap((application) => application.history.slice(-2).map((event) => ({ application, event }))).slice(0, 6).map(({ application, event }) => <div key={event.id} className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-medium text-[#172b3a]">{event.message}</p><p className="mt-1 text-xs text-slate-500">{application.projectName} · {new Date(event.timestamp).toLocaleString()}</p></div>)}</div></Panel>
+        </div>
+      </>}
+
+      {(mode === "queue" || mode === "applications") && <Panel title={mode === "queue" ? "Applications requiring review" : "Application records"}>
+        <div className="mb-4 grid gap-3 md:grid-cols-[1.5fr,1fr,1fr,1fr,1fr]">
+          <input aria-label="Search officer applications" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ID, applicant, project, approval" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" />
+          <select aria-label="Filter application status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="all">All statuses</option>{["draft", "submitted", "under_review", "changes_requested", "approved", "rejected"].map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select>
+          <select aria-label="Filter department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">{departments.map((department) => <option key={department} value={department}>{department === "all" ? "All departments" : department}</option>)}</select>
+          <select aria-label="Filter SLA" value={slaFilter} onChange={(event) => setSlaFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="all">All SLA states</option><option value="within">Within SLA</option><option value="approaching">Approaching SLA</option><option value="overdue">Overdue</option></select>
+          <select aria-label="Sort applications" value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="sla">Sort by SLA</option><option value="recent">Sort by recent activity</option></select>
+        </div>
+        {filteredApplications.length === 0 ? <EmptyState title="No matching applications" description="Adjust the queue filters to find another application." /> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-slate-200 text-xs uppercase tracking-[0.1em] text-slate-500"><tr>{["Application", "Applicant", "Project", "Approval", "Department", "Status", "SLA", "Action"].map((heading) => <th key={heading} className="px-3 py-3">{heading}</th>)}</tr></thead><tbody>{filteredApplications.map((application) => <tr key={application.id} className="border-b border-slate-100"><td className="px-3 py-3 font-medium">{application.referenceNumber ?? application.id}</td><td className="px-3 py-3">{projects.find((project) => project.id === application.projectId)?.organization ?? "Applicant"}</td><td className="px-3 py-3">{application.projectName}</td><td className="px-3 py-3">{application.name}</td><td className="px-3 py-3">{application.authority}</td><td className="px-3 py-3"><StatusBadge tone={statusTone[application.status]}>{statusLabel(application.status)}</StatusBadge></td><td className="px-3 py-3"><StatusBadge tone={slaTone(slaState(application))}>{slaLabel(slaState(application))}</StatusBadge></td><td className="px-3 py-3"><Button variant="secondary" onClick={() => openApplication(application.id)}>Open</Button></td></tr>)}</tbody></table></div>}
+      </Panel>}
+
+      {mode === "documents" && <Panel title="Submitted documents requiring review"><div className="space-y-3">{documents.length === 0 ? <EmptyState title="No submitted documents" description="No documents are currently available for officer review." /> : documents.map((document) => { const application = applications.find((item) => item.documents.includes(document.id)); return <div key={document.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-medium text-[#172b3a]">{document.name}</p><p className="text-sm text-slate-600">{application?.referenceNumber ?? "Unlinked application"} · {document.projectName}</p><p className="text-xs text-slate-500">Submitted {new Date(document.uploadedAt).toLocaleDateString()} · {document.category}</p></div><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={document.verificationStatus === "verified" ? "positive" : "warning"}>{document.verificationStatus === "verified" ? "Verified" : document.verificationStatus === "needs_review" ? "Correction required" : "Pending verification"}</StatusBadge><Button variant="secondary" onClick={() => void handleDocumentAction(document, "verified")}>Verify Document</Button><Button variant="secondary" onClick={() => void handleDocumentAction(document, "needs_review")}>Request Correction</Button></div></div>})}</div></Panel>}
+
+      {selectedApplication && <Panel title={`Review · ${selectedApplication.referenceNumber ?? selectedApplication.id}`}><div className="grid gap-6 xl:grid-cols-2"><div className="space-y-4"><div><p className="text-xs uppercase tracking-[0.12em] text-slate-500">Applicant and project</p><p className="mt-1 font-semibold text-[#172b3a]">{projects.find((project) => project.id === selectedApplication.projectId)?.organization ?? "Applicant"}</p><p className="text-sm text-slate-600">{selectedApplication.projectName}</p></div><div><p className="text-xs uppercase tracking-[0.12em] text-slate-500">Approval and department</p><p className="mt-1 font-semibold text-[#172b3a]">{selectedApplication.name}</p><p className="text-sm text-slate-600">{selectedApplication.authority}</p></div><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs uppercase tracking-[0.12em] text-slate-500">Risk / attention</p><p className="mt-1 text-sm text-slate-700">{slaLabel(slaState(selectedApplication))}. Review document completeness and the application timeline before taking action.</p></div><div className="flex flex-wrap gap-2"><Button onClick={() => void handleApplicationAction("approved", "Application approved in the illustrative officer review.")}>Approve application</Button><Button variant="secondary" onClick={() => void handleApplicationAction("changes_requested", "Officer requested applicant corrections.")}>Request correction</Button><Button variant="secondary" onClick={() => void handleApplicationAction("rejected", "Application rejected in the illustrative officer review.")}>Reject application</Button></div></div><div><p className="text-xs uppercase tracking-[0.12em] text-slate-500">Timeline</p><div className="mt-2 space-y-2">{selectedApplication.history.map((event) => <div key={event.id} className="rounded-xl border border-slate-200 p-3 text-sm"><p className="font-medium text-[#172b3a]">{event.message}</p><p className="mt-1 text-xs text-slate-500">{new Date(event.timestamp).toLocaleString()}</p></div>)}</div><p className="mt-5 text-xs uppercase tracking-[0.12em] text-slate-500">Submitted documents</p><div className="mt-2 space-y-2">{selectedDocuments.map((document) => <div key={document.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 p-3 text-sm"><span>{document.name}</span><Button variant="secondary" onClick={() => void handleDocumentAction(document, "verified")}>Verify</Button></div>)}</div></div></div></Panel>}
+    </div>
+  </AppShell>;
+}
+```
+
+---
+
 ## `src\components\roadmap.tsx`
 
 **File:** `src\components\roadmap.tsx`
@@ -1609,6 +3985,7 @@ export function DocumentsWorkspace() {
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { Button, EmptyState, PageHeader, Panel, StatusBadge } from "@/components/ui";
@@ -1621,8 +3998,8 @@ import type {
   SourceVerificationStatus
 } from "@/contracts/roadmap";
 import { mockRoadmapApi } from "@/lib/mock-services";
-
-const ROADMAP_PROJECT_ID = "proj-vasavi-food-processing";
+import { getProjects } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
 
 const statusMeta: Record<
   ApprovalTaskStatus,
@@ -2520,7 +4897,12 @@ function TaskDetailDrawer({
 }
 
 export function RoadmapWorkspaceView() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedProjectId = searchParams.get("projectId");
   const [workspace, setWorkspace] = useState<RoadmapWorkspace | null>(null);
+  const [projects, setProjects] = useState<MockProject[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(requestedProjectId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -2541,7 +4923,16 @@ export function RoadmapWorkspaceView() {
       setLoading(true);
       setError(null);
       try {
-        const roadmap = await mockRoadmapApi.getProjectRoadmap(ROADMAP_PROJECT_ID);
+        const projectData = await getProjects();
+        const projectId = requestedProjectId && projectData.some((project) => project.id === requestedProjectId)
+          ? requestedProjectId
+          : projectData[0]?.id;
+        if (!projectId) throw new Error("No projects are available for the roadmap.");
+        if (!cancelled) {
+          setProjects(projectData);
+          setSelectedProjectId(projectId);
+        }
+        const roadmap = await mockRoadmapApi.getProjectRoadmap(projectId);
         if (!cancelled) {
           setWorkspace(roadmap);
           setSelectedTaskId(roadmap.tasks[0]?.id ?? null);
@@ -2562,11 +4953,11 @@ export function RoadmapWorkspaceView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [requestedProjectId]);
 
   const selectedTask = useMemo(() => {
-    if (!workspace) return null;
-    return workspace.tasks.find((task) => task.id === selectedTaskId) ?? workspace.tasks[0] ?? null;
+    if (!workspace || !selectedTaskId) return null;
+    return workspace.tasks.find((task) => task.id === selectedTaskId) ?? null;
   }, [workspace, selectedTaskId]);
 
   const clearFilters = () => {
@@ -2584,7 +4975,8 @@ export function RoadmapWorkspaceView() {
 
     try {
       setIsSaving(true);
-      const nextWorkspace = await mockRoadmapApi.updateTask(ROADMAP_PROJECT_ID, selectedTask.id, { status: nextStatus });
+      if (!selectedProjectId) return;
+      const nextWorkspace = await mockRoadmapApi.updateTask(selectedProjectId, selectedTask.id, { status: nextStatus });
       setWorkspace(nextWorkspace);
       setSelectedTaskId(selectedTask.id);
       setNotice(`Task status updated to ${statusMeta[nextStatus].label}.`);
@@ -2601,7 +4993,8 @@ export function RoadmapWorkspaceView() {
 
     try {
       setIsSaving(true);
-      const nextWorkspace = await mockRoadmapApi.addTaskNote(ROADMAP_PROJECT_ID, selectedTask.id, noteDraft.trim());
+      if (!selectedProjectId) return;
+      const nextWorkspace = await mockRoadmapApi.addTaskNote(selectedProjectId, selectedTask.id, noteDraft.trim());
       setWorkspace(nextWorkspace);
       setNoteDraft("");
       setNotice("Note saved to the roadmap timeline.");
@@ -2646,6 +5039,14 @@ export function RoadmapWorkspaceView() {
           description={`${workspace.location} · The mock service represents illustrative approval activities and dependency relationships only.`}
           actions={
             <div className="flex flex-wrap items-center gap-2">
+              <select
+                aria-label="Select roadmap project"
+                value={selectedProjectId ?? ""}
+                onChange={(event) => router.push(`/roadmap?projectId=${encodeURIComponent(event.target.value)}`)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              >
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
               <Button variant={view === "graph" ? "primary" : "secondary"} type="button" onClick={() => setView("graph")}>
                 Graph view
               </Button>
@@ -2721,18 +5122,28 @@ export function RoadmapWorkspaceView() {
       </div>
 
       {selectedTask ? (
-        <TaskDetailDrawer
-          task={selectedTask}
-          projectName={workspace.project_name}
-          workspace={workspace}
-          onClose={() => setSelectedTaskId(null)}
-          onTaskSelection={(taskId) => setSelectedTaskId(taskId)}
-          onUpdateTaskStatus={handleTaskUpdate}
-          onAddNote={handleAddNote}
-          noteDraft={noteDraft}
-          setNoteDraft={setNoteDraft}
-          isSaving={isSaving}
-        />
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-slate-900/30"
+            onClick={() => setSelectedTaskId(null)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setSelectedTaskId(null); }}
+            role="button"
+            tabIndex={-1}
+            aria-label="Close task details"
+          />
+          <TaskDetailDrawer
+            task={selectedTask}
+            projectName={workspace.project_name}
+            workspace={workspace}
+            onClose={() => setSelectedTaskId(null)}
+            onTaskSelection={(taskId) => setSelectedTaskId(taskId)}
+            onUpdateTaskStatus={handleTaskUpdate}
+            onAddNote={handleAddNote}
+            noteDraft={noteDraft}
+            setNoteDraft={setNoteDraft}
+            isSaving={isSaving}
+          />
+        </>
       ) : null}
     </AppShell>
   );
@@ -2800,7 +5211,7 @@ export function Button({
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost";
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const variants = {
     primary:
@@ -2832,7 +5243,7 @@ export function Panel({
 }: {
   title?: string;
   action?: ReactNode;
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
 }) {
   return (
@@ -2992,6 +5403,47 @@ export interface ApiError {
     fields?: Array<{ path: string; message: string }>;
     request_id: string;
   };
+}
+```
+
+---
+
+## `src\contracts\project-full.ts`
+
+**File:** `src\contracts\project-full.ts`
+
+```text
+import type { ProjectStage, SiteStatus } from './project';
+
+export type { ProjectStage, SiteStatus } from './project';
+
+export interface MockProject {
+  id: string;
+  name: string;
+  sector: string;
+  stage: ProjectStage;
+  status: 'active' | 'completed' | 'on_hold';
+  location: string;
+  organization: string;
+  description: string;
+  investmentAmount: string;
+  siteStatus: SiteStatus;
+  createdAt: string;
+  updatedAt: string;
+  progress: number;
+  approvalCount: number;
+  completedApprovals: number;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  sector: string;
+  stage: ProjectStage;
+  location: string;
+  organization: string;
+  description: string;
+  investmentAmount: string;
+  siteStatus: SiteStatus;
 }
 ```
 
@@ -3363,8 +5815,12 @@ import type {
   ApplicationRecord,
   NotificationItem,
   ProjectDocument,
-  UploadDocumentInput
+  UploadDocumentInput,
+  AdminOverviewSummary,
+  OfficerReviewItem,
+  RegulatoryUpdate
 } from "@/contracts/workflows";
+import type { MockProject, CreateProjectInput } from "@/contracts/project-full";
 
 import { apiBaseUrl, isMockMode } from "@/lib/config";
 import {
@@ -3373,8 +5829,13 @@ import {
   mockAssistantApi,
   mockDashboardApi,
   mockDocumentApi,
-  mockNotificationApi
+  mockNotificationApi,
+  mockProjectsApi,
+  mockRegulatoryUpdatesApi,
+  mockOfficerReviewApi,
+  mockAdminApi
 } from "@/lib/mock-services";
+import type { DocumentStatus } from "@/contracts/workflows";
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(new URL(path, apiBaseUrl), {
@@ -3396,12 +5857,12 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   return apiGet<DashboardSummary>("/dashboard/summary");
 }
 
-export async function getDocuments(projectId: string): Promise<ProjectDocument[]> {
+export async function getDocuments(projectId?: string): Promise<ProjectDocument[]> {
   if (isMockMode) {
     return mockDocumentApi.getDocuments(projectId);
   }
 
-  return apiGet<ProjectDocument[]>(`/projects/${projectId}/documents`);
+  return apiGet<ProjectDocument[]>(projectId ? `/projects/${projectId}/documents` : "/documents");
 }
 
 export async function uploadDocument(input: UploadDocumentInput): Promise<ProjectDocument[]> {
@@ -3412,12 +5873,19 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<Projec
   return apiGet<ProjectDocument[]>(`/projects/${input.projectId}/documents`);
 }
 
-export async function getApplications(projectId: string): Promise<ApplicationRecord[]> {
+export async function updateDocumentStatus(documentId: string, status: DocumentStatus, reason?: string): Promise<ProjectDocument[]> {
+  if (isMockMode) {
+    return mockDocumentApi.updateDocumentStatus(documentId, status, reason);
+  }
+  return apiGet<ProjectDocument[]>(`/documents/${documentId}`);
+}
+
+export async function getApplications(projectId?: string): Promise<ApplicationRecord[]> {
   if (isMockMode) {
     return mockApplicationsApi.getApplications(projectId);
   }
 
-  return apiGet<ApplicationRecord[]>(`/projects/${projectId}/applications`);
+  return apiGet<ApplicationRecord[]>(projectId ? `/projects/${projectId}/applications` : "/applications");
 }
 
 export async function createApplication(projectId: string, name: string): Promise<ApplicationRecord[]> {
@@ -3529,6 +5997,57 @@ export async function respondToApprovalRequest(
   }
 
   return apiGet<ApprovalRequest[]>(`/projects/${projectId}/approval-requests`);
+}
+
+
+export async function getProjects(): Promise<MockProject[]> {
+  if (isMockMode) {
+    return mockProjectsApi.getProjects();
+  }
+  return apiGet<MockProject[]>('/projects');
+}
+
+export async function getProject(id: string): Promise<MockProject | null> {
+  if (isMockMode) {
+    return mockProjectsApi.getProject(id);
+  }
+  return apiGet<MockProject | null>(`/projects/${id}`);
+}
+
+export async function createProject(input: CreateProjectInput): Promise<MockProject> {
+  if (isMockMode) {
+    return mockProjectsApi.createProject(input);
+  }
+  // Simplified for demo since it usually takes fetch POST
+  return apiGet<MockProject>('/projects');
+}
+
+export async function getRegulatoryUpdates(): Promise<RegulatoryUpdate[]> {
+  if (isMockMode) {
+    return mockRegulatoryUpdatesApi.getUpdates();
+  }
+  return apiGet<RegulatoryUpdate[]>('/regulatory-updates');
+}
+
+export async function getOfficerReviews(): Promise<OfficerReviewItem[]> {
+  if (isMockMode) {
+    return mockOfficerReviewApi.getReviews();
+  }
+  return apiGet<OfficerReviewItem[]>('/officer-reviews');
+}
+
+export async function updateOfficerReview(id: string, status: 'approved' | 'rejected' | 'changes_requested', note?: string): Promise<OfficerReviewItem[]> {
+  if (isMockMode) {
+    return mockOfficerReviewApi.updateReview(id, status, note);
+  }
+  return apiGet<OfficerReviewItem[]>(`/officer-reviews/${id}`);
+}
+
+export async function getAdminOverview(): Promise<AdminOverviewSummary> {
+  if (isMockMode) {
+    return mockAdminApi.getOverview();
+  }
+  return apiGet<AdminOverviewSummary>('/admin/overview');
 }
 ```
 
@@ -3691,8 +6210,12 @@ import type {
   NotificationItem,
   ProjectDocument,
   RequirementStatus,
-  UploadDocumentInput
+  UploadDocumentInput,
+  AdminOverviewSummary,
+  OfficerReviewItem,
+  RegulatoryUpdate
 } from "@/contracts/workflows";
+import type { MockProject, CreateProjectInput } from "@/contracts/project-full";
 import type { ApprovalTaskStatus } from "@/contracts/roadmap";
 import type {
   RoadmapEdge,
@@ -3704,6 +6227,9 @@ import type {
 
 const DASHBOARD_STORAGE_KEY = "indusai-demo-dashboard";
 const ROADMAP_STORAGE_KEY = "indusai-demo-roadmap";
+const PROJECTS_STORAGE_KEY = "indusai-demo-projects";
+const REGULATORY_UPDATES_STORAGE_KEY = "indusai-demo-regulatory-updates";
+const OFFICER_REVIEWS_STORAGE_KEY = "indusai-demo-officer-reviews";
 
 const mockUser = {
   id: "usr-204",
@@ -4140,10 +6666,20 @@ const roadmapBase: RoadmapWorkspace = {
   ]
 };
 
-function ensureRoadmapData(): RoadmapWorkspace {
-  const stored = readStoredRoadmap();
+function ensureRoadmapData(projectIdValue = roadmapBase.project_id): RoadmapWorkspace {
+  const stored = readStoredRoadmap(projectIdValue);
   if (stored) {
     return stored;
+  }
+
+  if (projectIdValue !== roadmapBase.project_id) {
+    const project = ensureProjects().find((entry) => entry.id === projectIdValue);
+    if (!project) {
+      throw new Error(`Project ${projectIdValue} not found in mock roadmap data.`);
+    }
+    const generated = createProjectRoadmap(project);
+    writeStoredRoadmap(generated);
+    return generated;
   }
 
   const edges: RoadmapEdge[] = [
@@ -4171,12 +6707,12 @@ function ensureRoadmapData(): RoadmapWorkspace {
   return base;
 }
 
-function readStoredRoadmap(): RoadmapWorkspace | null {
+function readStoredRoadmap(projectIdValue = roadmapBase.project_id): RoadmapWorkspace | null {
   if (typeof window === "undefined") {
     return null;
   }
 
-  const rawValue = window.localStorage.getItem(ROADMAP_STORAGE_KEY);
+  const rawValue = window.localStorage.getItem(roadmapStorageKey(projectIdValue));
   if (!rawValue) {
     return null;
   }
@@ -4193,7 +6729,7 @@ function writeStoredRoadmap(roadmap: RoadmapWorkspace): void {
     return;
   }
 
-  window.localStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify(roadmap));
+  window.localStorage.setItem(roadmapStorageKey(roadmap.project_id), JSON.stringify(roadmap));
 }
 
 function computeRoadmapSummary(workspace: RoadmapWorkspace): RoadmapWorkspace {
@@ -4245,17 +6781,6 @@ function syncTaskDependents(tasks: RoadmapTask[]): RoadmapTask[] {
   });
 }
 
-function ensureGraphMatchesTasks(tasks: RoadmapTask[]): RoadmapWorkspace["graph"] {
-  const graph = ensureRoadmapData().graph;
-  const nextGraph = {
-    ...graph,
-    nodes: tasks.map((task) => ({ ...task }))
-  };
-
-  nextGraph.edges = graph.edges.filter((edge) => tasks.some((task) => task.id === edge.source) && tasks.some((task) => task.id === edge.target));
-  return nextGraph;
-}
-
 export const mockDashboardApi = {
   async getDashboardSummary(): Promise<DashboardSummary> {
     const stored = readStoredSummary() ?? defaultSummary;
@@ -4271,7 +6796,7 @@ export const mockDashboardApi = {
 
 export const mockRoadmapApi = {
   async getProjectRoadmap(projectId: string): Promise<RoadmapWorkspace> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     if (projectId !== workspace.project_id) {
       throw new Error(`Project ${projectId} not found in mock roadmap data.`);
     }
@@ -4281,7 +6806,7 @@ export const mockRoadmapApi = {
   },
 
   async getTask(projectId: string, taskId: string): Promise<RoadmapTask> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     const task = workspace.tasks.find((entry) => entry.id === taskId);
     if (!task) {
       throw new Error(`Roadmap task ${taskId} not found.`);
@@ -4293,7 +6818,7 @@ export const mockRoadmapApi = {
   },
 
   async addTaskNote(projectId: string, taskId: string, noteText: string): Promise<RoadmapWorkspace> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     if (projectId !== workspace.project_id) {
       throw new Error(`Project ${projectId} not found in mock roadmap data.`);
     }
@@ -4343,7 +6868,7 @@ export const mockRoadmapApi = {
   },
 
   async updateTask(projectId: string, taskId: string, updates: TaskUpdateInput): Promise<RoadmapWorkspace> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     if (projectId !== workspace.project_id) {
       throw new Error(`Project ${projectId} not found in mock roadmap data.`);
     }
@@ -4393,7 +6918,7 @@ export const mockRoadmapApi = {
   },
 
   async performTaskAction(projectId: string, taskId: string, actionId: RoadmapTaskActionId): Promise<RoadmapWorkspace> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     if (projectId !== workspace.project_id) {
       throw new Error(`Project ${projectId} not found in mock roadmap data.`);
     }
@@ -4468,7 +6993,8 @@ export const mockRoadmapApi = {
 
   async reset(): Promise<void> {
     if (typeof window !== "undefined") {
-      window.localStorage.removeItem(ROADMAP_STORAGE_KEY);
+      window.localStorage.removeItem(roadmapStorageKey(roadmapBase.project_id));
+      ensureProjects().forEach((project) => window.localStorage.removeItem(roadmapStorageKey(project.id)));
     }
   }
 };
@@ -4505,6 +7031,10 @@ function writeStoredJson<T>(key: string, value: T): void {
   }
 
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function roadmapStorageKey(projectIdValue: string): string {
+  return `${ROADMAP_STORAGE_KEY}:${projectIdValue}`;
 }
 
 const projectId = "proj-vasavi-food-processing";
@@ -4631,6 +7161,39 @@ const defaultApplications: ApplicationRecord[] = [
     ]
   }
 ];
+
+function createDocumentsForProject(project: MockProject): ProjectDocument[] {
+  const predefined: Record<string, ProjectDocument[]> = {
+    [projectId]: defaultDocuments,
+    "proj-apex-textile": [
+      { id: "apex-doc-land", name: "Apex leased industrial plot deed.pdf", type: "Land record", category: "Engineering", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", uploadedAt: "2026-09-12T00:00:00Z", expiryAt: null, verificationStatus: "verified", sizeLabel: "1.7 MB", description: "Predefined lease evidence for the textile expansion site.", relatedTaskIds: ["proj-apex-textile-site-plan"], requirementStatus: "satisfied", sourceVerificationStatus: "illustrative" },
+      { id: "apex-doc-process", name: "Dyeing and chemical process plan.pdf", type: "Environmental report", category: "Environmental", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", uploadedAt: "2026-09-18T00:00:00Z", expiryAt: null, verificationStatus: "needs_review", sizeLabel: "2.8 MB", description: "Predefined textile process evidence for effluent consent.", relatedTaskIds: ["proj-apex-textile-sector-approval"], requirementStatus: "needs_review", sourceVerificationStatus: "illustrative" },
+      { id: "apex-doc-layout", name: "Textile factory layout.pdf", type: "Factory layout", category: "Engineering", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", uploadedAt: "2026-09-20T00:00:00Z", expiryAt: null, verificationStatus: "pending", sizeLabel: "2.2 MB", description: "Predefined layout evidence for textile factory inspection.", relatedTaskIds: ["proj-apex-textile-inspection"], requirementStatus: "missing", sourceVerificationStatus: "illustrative" }
+    ],
+    "proj-mehta-metalworks": [
+      { id: "mehta-doc-land", name: "Mehta industrial plot identification.pdf", type: "Land record", category: "Engineering", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", uploadedAt: "2026-09-08T00:00:00Z", expiryAt: null, verificationStatus: "pending", sizeLabel: "1.4 MB", description: "Predefined site identification record for the metalworks project.", relatedTaskIds: ["proj-mehta-metalworks-site-plan"], requirementStatus: "needs_review", sourceVerificationStatus: "illustrative" },
+      { id: "mehta-doc-emissions", name: "Steel re-rolling emissions plan.pdf", type: "Environmental report", category: "Environmental", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", uploadedAt: "2026-09-14T00:00:00Z", expiryAt: null, verificationStatus: "needs_review", sizeLabel: "3.4 MB", description: "Predefined emissions evidence for metal process consent.", relatedTaskIds: ["proj-mehta-metalworks-sector-approval"], requirementStatus: "missing", sourceVerificationStatus: "illustrative" },
+      { id: "mehta-doc-safety", name: "Scrap processing safety layout.pdf", type: "Safety plan", category: "Safety", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", uploadedAt: "2026-09-16T00:00:00Z", expiryAt: null, verificationStatus: "pending", sizeLabel: "2.6 MB", description: "Predefined safety layout for the metal processing site inspection.", relatedTaskIds: ["proj-mehta-metalworks-inspection"], requirementStatus: "missing", sourceVerificationStatus: "illustrative" }
+    ]
+  };
+  return predefined[project.id] ?? [];
+}
+
+function createApplicationsForProject(project: MockProject): ApplicationRecord[] {
+  const predefined: Record<string, ApplicationRecord[]> = {
+    [projectId]: defaultApplications,
+    "proj-apex-textile": [
+      { id: "apex-app-factory", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Textile factory license application", authority: "Factory licensing office", referenceNumber: "AT-4102", status: "under_review", submittedAt: "2026-09-25T00:00:00Z", lastUpdatedAt: "2026-10-01T00:00:00Z", pendingAction: "Review textile layout comments", relatedTaskIds: ["proj-apex-textile-operating-license"], documents: ["apex-doc-land", "apex-doc-layout"], history: [{ id: "apex-hist-factory", timestamp: "2026-10-01T00:00:00Z", status: "under_review", message: "Textile factory license is under illustrative review." }] },
+      { id: "apex-app-pollution", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Dyeing and effluent consent application", authority: "Pollution control board", referenceNumber: "AT-4103", status: "changes_requested", submittedAt: "2026-09-22T00:00:00Z", lastUpdatedAt: "2026-09-29T00:00:00Z", pendingAction: "Update chemical process evidence", relatedTaskIds: ["proj-apex-textile-sector-approval"], documents: ["apex-doc-process"], history: [{ id: "apex-hist-pollution", timestamp: "2026-09-29T00:00:00Z", status: "changes_requested", message: "Additional textile process evidence was requested." }] },
+      { id: "apex-app-water", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Textile water connection application", authority: "Municipal utilities office", referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: "2026-09-20T00:00:00Z", pendingAction: "Attach water demand estimate", relatedTaskIds: ["proj-apex-textile-operating-license"], documents: [], history: [{ id: "apex-hist-water", timestamp: "2026-09-20T00:00:00Z", status: "draft", message: "Draft water connection request created." }] }
+    ],
+    "proj-mehta-metalworks": [
+      { id: "mehta-app-environment", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", name: "Metal process environmental consent application", authority: "Pollution control board", referenceNumber: "MM-1201", status: "under_review", submittedAt: "2026-09-30T00:00:00Z", lastUpdatedAt: "2026-10-02T00:00:00Z", pendingAction: "Review emissions plan", relatedTaskIds: ["proj-mehta-metalworks-sector-approval"], documents: ["mehta-doc-emissions"], history: [{ id: "mehta-hist-environment", timestamp: "2026-10-02T00:00:00Z", status: "under_review", message: "Metal process consent is under illustrative review." }] },
+      { id: "mehta-app-fire", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", name: "Scrap processing fire safety application", authority: "State fire services", referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: "2026-10-01T00:00:00Z", pendingAction: "Attach safety layout", relatedTaskIds: ["proj-mehta-metalworks-inspection"], documents: ["mehta-doc-safety"], history: [{ id: "mehta-hist-fire", timestamp: "2026-10-01T00:00:00Z", status: "draft", message: "Draft fire safety request created." }] }
+    ]
+  };
+  return predefined[project.id] ?? [];
+}
 
 const defaultAssistantTools: AssistantTool[] = [
   { id: "web_search", label: "Web Search", detail: "External web lookup for general guidance", state: "available" },
@@ -4759,19 +7322,35 @@ const defaultApprovalRequests: ApprovalRequest[] = [
 function ensureDocuments(): ProjectDocument[] {
   const stored = readStoredJson<ProjectDocument[]>(DOCUMENTS_STORAGE_KEY);
   if (stored) {
+    const knownProjects = new Set(stored.map((document) => document.projectId));
+    const additions = ensureProjects().filter((project) => !knownProjects.has(project.id)).flatMap(createDocumentsForProject);
+    if (additions.length > 0) {
+      const merged = [...stored, ...additions];
+      writeStoredJson(DOCUMENTS_STORAGE_KEY, merged);
+      return merged;
+    }
     return stored;
   }
-  writeStoredJson(DOCUMENTS_STORAGE_KEY, defaultDocuments);
-  return defaultDocuments;
+  const seeded = ensureProjects().flatMap(createDocumentsForProject);
+  writeStoredJson(DOCUMENTS_STORAGE_KEY, seeded);
+  return seeded;
 }
 
 function ensureApplications(): ApplicationRecord[] {
   const stored = readStoredJson<ApplicationRecord[]>(APPLICATIONS_STORAGE_KEY);
   if (stored) {
+    const knownProjects = new Set(stored.map((application) => application.projectId));
+    const additions = ensureProjects().filter((project) => !knownProjects.has(project.id)).flatMap(createApplicationsForProject);
+    if (additions.length > 0) {
+      const merged = [...stored, ...additions];
+      writeStoredJson(APPLICATIONS_STORAGE_KEY, merged);
+      return merged;
+    }
     return stored;
   }
-  writeStoredJson(APPLICATIONS_STORAGE_KEY, defaultApplications);
-  return defaultApplications;
+  const seeded = ensureProjects().flatMap(createApplicationsForProject);
+  writeStoredJson(APPLICATIONS_STORAGE_KEY, seeded);
+  return seeded;
 }
 
 function ensureConversations(): AssistantConversation[] {
@@ -4841,9 +7420,10 @@ function buildAssistantReply(prompt: string): AssistantMessage {
 }
 
 export const mockDocumentApi = {
-  async getDocuments(projectIdValue: string): Promise<ProjectDocument[]> {
-    const docs = ensureDocuments().filter((doc) => doc.projectId === projectIdValue);
-    return waitForDemo(docs);
+  async getDocuments(projectIdValue?: string): Promise<ProjectDocument[]> {
+    const docs = ensureDocuments();
+    const filtered = projectIdValue ? docs.filter((doc) => doc.projectId === projectIdValue) : docs;
+    return waitForDemo(filtered);
   },
   async uploadDocument(input: UploadDocumentInput): Promise<ProjectDocument[]> {
     const docs = ensureDocuments();
@@ -4867,20 +7447,45 @@ export const mockDocumentApi = {
     const nextDocs = [nextDoc, ...docs];
     writeStoredJson(DOCUMENTS_STORAGE_KEY, nextDocs);
     return waitForDemo(nextDocs.filter((doc) => doc.projectId === input.projectId));
+  },
+  async updateDocumentStatus(documentId: string, status: ProjectDocument["verificationStatus"], reason?: string): Promise<ProjectDocument[]> {
+    const documents: ProjectDocument[] = ensureDocuments().map((document) => document.id === documentId ? { ...document, verificationStatus: status, requirementStatus: status === "verified" ? "satisfied" as const : "needs_review" as const } : document);
+    writeStoredJson(DOCUMENTS_STORAGE_KEY, documents);
+
+    const relatedApplications = ensureApplications().filter((application) => application.documents.includes(documentId));
+    if (relatedApplications.length > 0) {
+      const now = new Date().toISOString();
+      const applications = ensureApplications().map((application) => {
+        if (!application.documents.includes(documentId) || status !== "needs_review") return application;
+        return {
+          ...application,
+          status: "changes_requested" as const,
+          pendingAction: reason ?? "Review the requested document correction",
+          lastUpdatedAt: now,
+          history: [...application.history, { id: `hist-${Date.now()}-${application.id}`, timestamp: now, status: "changes_requested" as const, message: reason ?? "Officer requested a document correction." }]
+        };
+      });
+      writeStoredJson(APPLICATIONS_STORAGE_KEY, applications);
+      const notifications = ensureNotifications();
+      writeStoredJson(NOTIFICATIONS_STORAGE_KEY, [...relatedApplications.map((application) => ({ id: `notification-${Date.now()}-${application.id}`, type: "application" as const, title: "Document correction requested", description: reason ?? "An officer requested a correction to a submitted document.", timestamp: now, projectId: application.projectId, taskId: application.relatedTaskIds[0], unread: true })), ...notifications]);
+    }
+    return waitForDemo(documents);
   }
 };
 
 export const mockApplicationsApi = {
-  async getApplications(projectIdValue: string): Promise<ApplicationRecord[]> {
-    const apps = ensureApplications().filter((app) => app.projectId === projectIdValue);
-    return waitForDemo(apps);
+  async getApplications(projectIdValue?: string): Promise<ApplicationRecord[]> {
+    const apps = ensureApplications();
+    const filtered = projectIdValue ? apps.filter((app) => app.projectId === projectIdValue) : apps;
+    return waitForDemo(filtered);
   },
   async createDraftApplication(projectIdValue: string, name: string): Promise<ApplicationRecord[]> {
     const apps = ensureApplications();
+    const selectedProject = ensureProjects().find((project) => project.id === projectIdValue);
     const draft: ApplicationRecord = {
       id: `app-${Date.now()}`,
       projectId: projectIdValue,
-      projectName,
+      projectName: selectedProject?.name ?? "Selected project",
       name,
       authority: "Applicant desk",
       referenceNumber: null,
@@ -5065,6 +7670,184 @@ export const mockApprovalRequestsApi = {
   }
 };
 
+const defaultProjects: MockProject[] = [
+  { id: 'proj-vasavi-food-processing', name: 'Vasavi Food Processing Unit', sector: 'Food processing', stage: 'construction', status: 'active', location: 'Vadodara, Gujarat', organization: 'Gujarat Industrial Growth Cell', description: 'Large-scale food processing facility for packaged goods and ingredients.', investmentAmount: '₹12.5 Cr', siteStatus: 'owned', createdAt: '2026-08-15T00:00:00Z', updatedAt: '2026-10-03T09:40:00Z', progress: 78, approvalCount: 9, completedApprovals: 3 },
+  { id: 'proj-apex-textile', name: 'Apex Textile Expansion', sector: 'Textiles', stage: 'pre_operational', status: 'active', location: 'Surat, Gujarat', organization: 'Apex Textiles Ltd', description: 'Expansion of dyeing and finishing capacity for export-quality fabrics.', investmentAmount: '₹8.2 Cr', siteStatus: 'leased', createdAt: '2026-07-20T00:00:00Z', updatedAt: '2026-09-28T00:00:00Z', progress: 59, approvalCount: 6, completedApprovals: 2 },
+  { id: 'proj-mehta-metalworks', name: 'Mehta Metalworks', sector: 'Metals', stage: 'land_acquisition', status: 'active', location: 'Rajkot, Gujarat', organization: 'Mehta Industries', description: 'New steel re-rolling mill with integrated scrap processing.', investmentAmount: '₹22 Cr', siteStatus: 'identified', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', progress: 34, approvalCount: 8, completedApprovals: 1 }
+];
+
+function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
+  const seed = {
+    "proj-apex-textile": {
+      approval: "Dyeing and effluent consent",
+      document: "Textile process and chemical plan",
+      authority: "Pollution control board",
+      license: "Textile factory license"
+    },
+    "proj-mehta-metalworks": {
+      approval: "Metal process environmental consent",
+      document: "Metal process and emissions plan",
+      authority: "Pollution control board",
+      license: "Metalworks operating license"
+    }
+  }[project.id];
+  if (!seed) {
+    throw new Error(`No predefined roadmap exists for project ${project.id}.`);
+  }
+  const prefix = project.id;
+  const ids = {
+    site: `${prefix}-site-plan`,
+    sector: `${prefix}-sector-approval`,
+    inspection: `${prefix}-inspection`,
+    license: `${prefix}-operating-license`
+  };
+  const now = new Date().toISOString();
+  const task = (templateId: string, overrides: Partial<RoadmapTask>): RoadmapTask => {
+    const template = roadmapBase.tasks.find((entry) => entry.id === templateId);
+    if (!template) throw new Error(`Roadmap template ${templateId} not found.`);
+    return makeRoadmapTask({
+      ...template,
+      id: `${prefix}-${templateId}`,
+      status: "not_started",
+      readiness: "needs_review",
+      source_verification_status: "illustrative",
+      source_refs: [],
+      prerequisites: [],
+      dependents: [],
+      notes: [],
+      activity: [],
+      last_updated_at: now,
+      ...overrides
+    });
+  };
+  const tasks = [
+    task("site-layout-plan", { id: ids.site, title: `${project.name} site plan`, description: `Illustrative site and infrastructure planning for ${project.name}.`, required_documents: [`${project.name} site plan.pdf`], status: "in_progress", readiness: "at_risk", available_actions: ["mark_complete", "add_note"] }),
+    task("effluent-treatment-review", { id: ids.sector, title: seed.approval, description: `Review the ${seed.approval.toLowerCase()} requirements for ${project.name}.`, authority: seed.authority, required_documents: [`${seed.document}.pdf`], prerequisites: [ids.site], status: "pending", readiness: "needs_review", available_actions: ["submit_for_review", "mark_in_progress", "add_note"] }),
+    task("inspection-site", { id: ids.inspection, title: `${project.name} site inspection`, description: `Coordinate an illustrative readiness inspection for ${project.name}.`, prerequisites: [ids.site], status: "pending", readiness: "at_risk", required_documents: ["Inspection readiness checklist.pdf"], available_actions: ["mark_in_progress", "add_note"] }),
+    task("factory-license", { id: ids.license, title: seed.license, description: `Downstream operating approval after the project-specific review and inspection.`, authority: seed.authority, prerequisites: [ids.sector, ids.inspection], status: "blocked", readiness: "blocked", blocked_reason: `Awaiting ${seed.approval.toLowerCase()} and site inspection.`, required_documents: [`${project.name} license application.pdf`], available_actions: ["mark_in_progress", "submit_for_review", "add_note"] })
+  ];
+  tasks[0].dependents = [ids.sector, ids.inspection];
+  tasks[1].dependents = [ids.license];
+  tasks[2].dependents = [ids.license];
+  const edges: RoadmapEdge[] = [
+    { id: `${prefix}-edge-site-sector`, source: ids.site, target: ids.sector, edge_type: "depends_on" },
+    { id: `${prefix}-edge-site-inspection`, source: ids.site, target: ids.inspection, edge_type: "depends_on" },
+    { id: `${prefix}-edge-sector-license`, source: ids.sector, target: ids.license, edge_type: "depends_on" },
+    { id: `${prefix}-edge-inspection-license`, source: ids.inspection, target: ids.license, edge_type: "depends_on" }
+  ];
+  return computeRoadmapSummary({
+    project_id: project.id,
+    project_name: project.name,
+    location: project.location,
+    last_updated_at: now,
+    summary: roadmapBase.summary,
+    graph: { project_id: project.id, version: 1, generated_at: now, nodes: tasks, edges },
+    tasks
+  });
+}
+
+const defaultRegulatoryUpdates: RegulatoryUpdate[] = [
+  { id: 'ru-1', title: 'Revised Emission Standards', source: 'Central Pollution Control Board', publishedAt: '2026-09-15', summary: 'New limits on SO2 and NOx emissions for industrial zones.', affectedAreas: ['Emissions', 'Environment'], status: 'reviewed', sourceVerificationStatus: 'verified' },
+  { id: 'ru-2', title: 'Export Licensing Simplification', source: 'Ministry of Commerce', publishedAt: '2026-09-18', summary: 'Streamlined online application process for textile exports.', affectedAreas: ['Exports', 'Textiles'], status: 'reviewed', sourceVerificationStatus: 'verified' },
+  { id: 'ru-3', title: 'Fire Safety Checklist Revision', source: 'State Fire Services', publishedAt: '2026-09-22', summary: 'Updated mandatory inspection checklist for high-risk manufacturing.', affectedAreas: ['Safety', 'Manufacturing'], status: 'pending', sourceVerificationStatus: 'verified' },
+  { id: 'ru-4', title: 'Food Processing Licensing Amendment', source: 'FSSAI', publishedAt: '2026-09-25', summary: 'Extended validity of central licenses to 5 years.', affectedAreas: ['Food', 'Licensing'], status: 'pending', sourceVerificationStatus: 'verified' },
+  { id: 'ru-5', title: 'Quality Certification Update', source: 'Bureau of Indian Standards', publishedAt: '2026-09-28', summary: 'Mandatory BIS certification for structural steel imports.', affectedAreas: ['Imports', 'Quality'], status: 'reviewed', sourceVerificationStatus: 'verified' },
+  { id: 'ru-6', title: 'EIA Notification Amendment', source: 'Ministry of Environment', publishedAt: '2026-10-01', summary: 'Exemption from prior clearance for minor capacity expansions.', affectedAreas: ['Environment', 'Clearance'], status: 'flagged', sourceVerificationStatus: 'verified' }
+];
+
+const defaultOfficerReviews: OfficerReviewItem[] = [
+  { id: 'or-1', projectId: 'proj-vasavi-food-processing', projectName: 'Vasavi Food Processing Unit', applicantName: 'Gujarat Industrial Growth Cell', taskName: 'Environmental Clearance Plan', status: 'assigned', priority: 'High', submittedAt: '2026-10-01', lastUpdatedAt: '2026-10-01', summary: 'Review environmental clearance documentation.', hasDocuments: true },
+  { id: 'or-2', projectId: 'proj-apex-textile', projectName: 'Apex Textile Expansion', applicantName: 'Apex Textiles Ltd', taskName: 'Consent to Establish (CTE)', status: 'assigned', priority: 'Medium', submittedAt: '2026-10-02', lastUpdatedAt: '2026-10-02', summary: 'Review CTE application.', hasDocuments: true },
+  { id: 'or-3', projectId: 'proj-mehta-metalworks', projectName: 'Mehta Metalworks', applicantName: 'Mehta Industries', taskName: 'Site Acquisition Proof', status: 'assigned', priority: 'Low', submittedAt: '2026-10-03', lastUpdatedAt: '2026-10-03', summary: 'Verify land ownership.', hasDocuments: true }
+];
+
+function ensureProjects(): MockProject[] {
+  return readStoredJson(PROJECTS_STORAGE_KEY) || defaultProjects;
+}
+
+function ensureRegulatoryUpdates(): RegulatoryUpdate[] {
+  return readStoredJson(REGULATORY_UPDATES_STORAGE_KEY) || defaultRegulatoryUpdates;
+}
+
+function ensureOfficerReviews(): OfficerReviewItem[] {
+  return readStoredJson(OFFICER_REVIEWS_STORAGE_KEY) || defaultOfficerReviews;
+}
+
+export const mockProjectsApi = {
+  async getProjects(): Promise<MockProject[]> {
+    return waitForDemo(ensureProjects());
+  },
+  async getProject(id: string): Promise<MockProject | null> {
+    const projects = ensureProjects();
+    return waitForDemo(projects.find(p => p.id === id) || null);
+  },
+  async createProject(input: CreateProjectInput): Promise<MockProject> {
+    const projects = ensureProjects();
+    const newProject: MockProject = {
+      id: `proj-${Date.now()}`,
+      name: input.name,
+      sector: input.sector,
+      stage: input.stage,
+      status: 'active',
+      location: input.location,
+      organization: input.organization,
+      description: input.description,
+      investmentAmount: input.investmentAmount,
+      siteStatus: input.siteStatus,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      progress: 0,
+      approvalCount: 5,
+      completedApprovals: 0
+    };
+    const next = [...projects, newProject];
+    writeStoredJson(PROJECTS_STORAGE_KEY, next);
+    return waitForDemo(newProject);
+  }
+};
+
+export const mockRegulatoryUpdatesApi = {
+  async getUpdates(): Promise<RegulatoryUpdate[]> {
+    return waitForDemo(ensureRegulatoryUpdates());
+  }
+};
+
+export const mockOfficerReviewApi = {
+  async getReviews(): Promise<OfficerReviewItem[]> {
+    return waitForDemo(ensureOfficerReviews());
+  },
+  async updateReview(id: string, status: 'approved' | 'rejected' | 'changes_requested', note?: string): Promise<OfficerReviewItem[]> {
+    const reviews = ensureOfficerReviews().map(r => {
+      if (r.id === id) {
+        return { ...r, status };
+      }
+      return r;
+    });
+    writeStoredJson(OFFICER_REVIEWS_STORAGE_KEY, reviews);
+    return waitForDemo(reviews);
+  }
+};
+
+export const mockAdminApi = {
+  async getOverview(): Promise<AdminOverviewSummary> {
+    const projects = ensureProjects();
+    const activeProjects = projects.filter(p => p.status === 'active').length;
+    const completedProjects = projects.filter(p => p.status === 'completed').length;
+    const totalInvestmentStr = '₹' + projects.reduce((acc, p) => {
+      const match = p.investmentAmount.match(/([\d.]+)/);
+      if (match) return acc + parseFloat(match[1]);
+      return acc;
+    }, 0).toFixed(1) + ' Cr';
+    
+    return waitForDemo({
+      totalUsers: 145, // Demo data
+      totalProjects: projects.length,
+      openReviews: ensureOfficerReviews().filter(r => r.status === 'assigned' || r.status === 'in_review').length,
+      pendingRegulatoryUpdates: ensureRegulatoryUpdates().filter(u => u.status === 'pending').length
+    });
+  }
+};
+
 export async function resetMockData(): Promise<void> {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(DOCUMENTS_STORAGE_KEY);
@@ -5073,6 +7856,9 @@ export async function resetMockData(): Promise<void> {
     window.localStorage.removeItem(ACTIVITY_STORAGE_KEY);
     window.localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
     window.localStorage.removeItem(APPROVAL_REQUESTS_STORAGE_KEY);
+    window.localStorage.removeItem(PROJECTS_STORAGE_KEY);
+    window.localStorage.removeItem(REGULATORY_UPDATES_STORAGE_KEY);
+    window.localStorage.removeItem(OFFICER_REVIEWS_STORAGE_KEY);
   }
 }
 ```

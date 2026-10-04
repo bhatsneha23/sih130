@@ -471,10 +471,30 @@ function ensureRoadmapData(projectIdValue = roadmapBase.project_id): RoadmapWork
     return stored;
   }
 
-  if (projectIdValue !== roadmapBase.project_id) {
+    if (projectIdValue !== roadmapBase.project_id) {
     const project = ensureProjects().find((entry) => entry.id === projectIdValue);
     if (!project) {
-      throw new Error(`Project ${projectIdValue} not found in mock roadmap data.`);
+      // Graceful fallback for unknown / stale IDs instead of throwing
+            const fallback: MockProject = {
+        id: projectIdValue,
+        name: "New project",
+        sector: "Manufacturing",
+        stage: "planning",
+        status: "active",
+        location: "Not specified",
+        organization: "Not specified",
+        description: "",
+        investmentAmount: "",
+        siteStatus: "identified",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        progress: 0,
+        approvalCount: 5,
+        completedApprovals: 0
+      };
+      const generated = createProjectRoadmap(fallback);
+      writeStoredRoadmap(generated);
+      return generated;
     }
     const generated = createProjectRoadmap(project);
     writeStoredRoadmap(generated);
@@ -1476,7 +1496,10 @@ const defaultProjects: MockProject[] = [
 ];
 
 function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
-  const seed = {
+  const predefinedSeed: Record<
+    string,
+    { approval: string; document: string; authority: string; license: string }
+  > = {
     "proj-apex-textile": {
       approval: "Dyeing and effluent consent",
       document: "Textile process and chemical plan",
@@ -1489,10 +1512,15 @@ function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
       authority: "Pollution control board",
       license: "Metalworks operating license"
     }
-  }[project.id];
-  if (!seed) {
-    throw new Error(`No predefined roadmap exists for project ${project.id}.`);
-  }
+  };
+
+  const seed = predefinedSeed[project.id] ?? {
+    approval: `${project.sector} sector consent`,
+    document: `${project.name} process and compliance plan`,
+    authority: "Pollution control board",
+    license: `${project.name} operating license`
+  };
+
   const prefix = project.id;
   const ids = {
     site: `${prefix}-site-plan`,
@@ -1501,9 +1529,12 @@ function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
     license: `${prefix}-operating-license`
   };
   const now = new Date().toISOString();
+
   const task = (templateId: string, overrides: Partial<RoadmapTask>): RoadmapTask => {
     const template = roadmapBase.tasks.find((entry) => entry.id === templateId);
-    if (!template) throw new Error(`Roadmap template ${templateId} not found.`);
+    if (!template) {
+      throw new Error(`Roadmap template ${templateId} not found.`);
+    }
     return makeRoadmapTask({
       ...template,
       id: `${prefix}-${templateId}`,
@@ -1519,28 +1550,81 @@ function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
       ...overrides
     });
   };
+
   const tasks = [
-    task("site-layout-plan", { id: ids.site, title: `${project.name} site plan`, description: `Illustrative site and infrastructure planning for ${project.name}.`, required_documents: [`${project.name} site plan.pdf`], status: "in_progress", readiness: "at_risk", available_actions: ["mark_complete", "add_note"] }),
-    task("effluent-treatment-review", { id: ids.sector, title: seed.approval, description: `Review the ${seed.approval.toLowerCase()} requirements for ${project.name}.`, authority: seed.authority, required_documents: [`${seed.document}.pdf`], prerequisites: [ids.site], status: "pending", readiness: "needs_review", available_actions: ["submit_for_review", "mark_in_progress", "add_note"] }),
-    task("inspection-site", { id: ids.inspection, title: `${project.name} site inspection`, description: `Coordinate an illustrative readiness inspection for ${project.name}.`, prerequisites: [ids.site], status: "pending", readiness: "at_risk", required_documents: ["Inspection readiness checklist.pdf"], available_actions: ["mark_in_progress", "add_note"] }),
-    task("factory-license", { id: ids.license, title: seed.license, description: `Downstream operating approval after the project-specific review and inspection.`, authority: seed.authority, prerequisites: [ids.sector, ids.inspection], status: "blocked", readiness: "blocked", blocked_reason: `Awaiting ${seed.approval.toLowerCase()} and site inspection.`, required_documents: [`${project.name} license application.pdf`], available_actions: ["mark_in_progress", "submit_for_review", "add_note"] })
+    task("site-layout-plan", {
+      id: ids.site,
+      title: `${project.name} site plan`,
+      description: `Illustrative site and infrastructure planning for ${project.name}.`,
+      required_documents: [`${project.name} site plan.pdf`],
+      status: "in_progress",
+      readiness: "at_risk",
+      available_actions: ["mark_complete", "add_note"]
+    }),
+    task("effluent-treatment-review", {
+      id: ids.sector,
+      title: seed.approval,
+      description: `Review the ${seed.approval.toLowerCase()} requirements for ${project.name}.`,
+      authority: seed.authority,
+      required_documents: [`${seed.document}.pdf`],
+      prerequisites: [ids.site],
+      status: "pending",
+      readiness: "needs_review",
+      available_actions: ["submit_for_review", "mark_in_progress", "add_note"]
+    }),
+    task("inspection-site", {
+      id: ids.inspection,
+      title: `${project.name} site inspection`,
+      description: `Coordinate an illustrative readiness inspection for ${project.name}.`,
+      prerequisites: [ids.site],
+      status: "pending",
+      readiness: "at_risk",
+      required_documents: ["Inspection readiness checklist.pdf"],
+      available_actions: ["mark_in_progress", "add_note"]
+    }),
+    task("factory-license", {
+      id: ids.license,
+      title: seed.license,
+      description: `Downstream operating approval after the project-specific review and inspection.`,
+      authority: seed.authority,
+      prerequisites: [ids.sector, ids.inspection],
+      status: "blocked",
+      readiness: "blocked",
+      blocked_reason: `Awaiting ${seed.approval.toLowerCase()} and site inspection.`,
+      required_documents: [`${project.name} license application.pdf`],
+      available_actions: ["mark_in_progress", "submit_for_review", "add_note"]
+    })
   ];
+
   tasks[0].dependents = [ids.sector, ids.inspection];
   tasks[1].dependents = [ids.license];
   tasks[2].dependents = [ids.license];
+
   const edges: RoadmapEdge[] = [
     { id: `${prefix}-edge-site-sector`, source: ids.site, target: ids.sector, edge_type: "depends_on" },
     { id: `${prefix}-edge-site-inspection`, source: ids.site, target: ids.inspection, edge_type: "depends_on" },
     { id: `${prefix}-edge-sector-license`, source: ids.sector, target: ids.license, edge_type: "depends_on" },
     { id: `${prefix}-edge-inspection-license`, source: ids.inspection, target: ids.license, edge_type: "depends_on" }
   ];
+
   return computeRoadmapSummary({
     project_id: project.id,
     project_name: project.name,
     location: project.location,
     last_updated_at: now,
-    summary: roadmapBase.summary,
-    graph: { project_id: project.id, version: 1, generated_at: now, nodes: tasks, edges },
+    summary: {
+      ...roadmapBase.summary,
+      project_name: project.name,
+      location: project.location,
+      last_updated_at: now
+    },
+    graph: {
+      project_id: project.id,
+      version: 1,
+      generated_at: now,
+      nodes: tasks,
+      edges
+    },
     tasks
   });
 }
