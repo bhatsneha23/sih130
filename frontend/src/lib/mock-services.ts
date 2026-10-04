@@ -580,17 +580,6 @@ function syncTaskDependents(tasks: RoadmapTask[]): RoadmapTask[] {
   });
 }
 
-function ensureGraphMatchesTasks(tasks: RoadmapTask[]): RoadmapWorkspace["graph"] {
-  const graph = ensureRoadmapData(tasks[0]?.id.split("-").slice(0, -2).join("-") || roadmapBase.project_id).graph;
-  const nextGraph = {
-    ...graph,
-    nodes: tasks.map((task) => ({ ...task }))
-  };
-
-  nextGraph.edges = graph.edges.filter((edge) => tasks.some((task) => task.id === edge.source) && tasks.some((task) => task.id === edge.target));
-  return nextGraph;
-}
-
 export const mockDashboardApi = {
   async getDashboardSummary(): Promise<DashboardSummary> {
     const stored = readStoredSummary() ?? defaultSummary;
@@ -973,50 +962,36 @@ const defaultApplications: ApplicationRecord[] = [
 ];
 
 function createDocumentsForProject(project: MockProject): ProjectDocument[] {
-  if (project.id === projectId) {
-    return defaultDocuments;
-  }
-
-  const profile = getSectorProfile(project.sector);
-  const prefix = project.id;
-  return [
-    {
-      id: `${prefix}-doc-site`, name: `${project.name} site plan.pdf`, type: "Site plan", category: "Engineering", projectId: project.id, projectName: project.name,
-      uploadedAt: project.updatedAt, expiryAt: null, verificationStatus: "pending", sizeLabel: "1.8 MB", description: `Illustrative site plan for ${project.name}.`, relatedTaskIds: [`${prefix}-site-plan`], requirementStatus: "needs_review", sourceVerificationStatus: "illustrative"
-    },
-    {
-      id: `${prefix}-doc-sector`, name: `${profile.document}.pdf`, type: "Sector process plan", category: "Operations", projectId: project.id, projectName: project.name,
-      uploadedAt: project.updatedAt, expiryAt: null, verificationStatus: "needs_review", sizeLabel: "2.1 MB", description: `Project-specific ${profile.document.toLowerCase()} for ${project.name}.`, relatedTaskIds: [`${prefix}-sector-approval`], requirementStatus: "missing", sourceVerificationStatus: "illustrative"
-    },
-    {
-      id: `${prefix}-doc-inspection`, name: `${project.name} inspection checklist.pdf`, type: "Inspection record", category: "Safety", projectId: project.id, projectName: project.name,
-      uploadedAt: project.updatedAt, expiryAt: null, verificationStatus: "pending", sizeLabel: "920 KB", description: `Illustrative inspection readiness checklist for ${project.name}.`, relatedTaskIds: [`${prefix}-inspection`], requirementStatus: "missing", sourceVerificationStatus: "unverified"
-    }
-  ];
+  const predefined: Record<string, ProjectDocument[]> = {
+    [projectId]: defaultDocuments,
+    "proj-apex-textile": [
+      { id: "apex-doc-land", name: "Apex leased industrial plot deed.pdf", type: "Land record", category: "Engineering", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", uploadedAt: "2026-09-12T00:00:00Z", expiryAt: null, verificationStatus: "verified", sizeLabel: "1.7 MB", description: "Predefined lease evidence for the textile expansion site.", relatedTaskIds: ["proj-apex-textile-site-plan"], requirementStatus: "satisfied", sourceVerificationStatus: "illustrative" },
+      { id: "apex-doc-process", name: "Dyeing and chemical process plan.pdf", type: "Environmental report", category: "Environmental", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", uploadedAt: "2026-09-18T00:00:00Z", expiryAt: null, verificationStatus: "needs_review", sizeLabel: "2.8 MB", description: "Predefined textile process evidence for effluent consent.", relatedTaskIds: ["proj-apex-textile-sector-approval"], requirementStatus: "needs_review", sourceVerificationStatus: "illustrative" },
+      { id: "apex-doc-layout", name: "Textile factory layout.pdf", type: "Factory layout", category: "Engineering", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", uploadedAt: "2026-09-20T00:00:00Z", expiryAt: null, verificationStatus: "pending", sizeLabel: "2.2 MB", description: "Predefined layout evidence for textile factory inspection.", relatedTaskIds: ["proj-apex-textile-inspection"], requirementStatus: "missing", sourceVerificationStatus: "illustrative" }
+    ],
+    "proj-mehta-metalworks": [
+      { id: "mehta-doc-land", name: "Mehta industrial plot identification.pdf", type: "Land record", category: "Engineering", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", uploadedAt: "2026-09-08T00:00:00Z", expiryAt: null, verificationStatus: "pending", sizeLabel: "1.4 MB", description: "Predefined site identification record for the metalworks project.", relatedTaskIds: ["proj-mehta-metalworks-site-plan"], requirementStatus: "needs_review", sourceVerificationStatus: "illustrative" },
+      { id: "mehta-doc-emissions", name: "Steel re-rolling emissions plan.pdf", type: "Environmental report", category: "Environmental", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", uploadedAt: "2026-09-14T00:00:00Z", expiryAt: null, verificationStatus: "needs_review", sizeLabel: "3.4 MB", description: "Predefined emissions evidence for metal process consent.", relatedTaskIds: ["proj-mehta-metalworks-sector-approval"], requirementStatus: "missing", sourceVerificationStatus: "illustrative" },
+      { id: "mehta-doc-safety", name: "Scrap processing safety layout.pdf", type: "Safety plan", category: "Safety", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", uploadedAt: "2026-09-16T00:00:00Z", expiryAt: null, verificationStatus: "pending", sizeLabel: "2.6 MB", description: "Predefined safety layout for the metal processing site inspection.", relatedTaskIds: ["proj-mehta-metalworks-inspection"], requirementStatus: "missing", sourceVerificationStatus: "illustrative" }
+    ]
+  };
+  return predefined[project.id] ?? [];
 }
 
 function createApplicationsForProject(project: MockProject): ApplicationRecord[] {
-  if (project.id === projectId) {
-    return defaultApplications;
-  }
-
-  const profile = getSectorProfile(project.sector);
-  const prefix = project.id;
-  const documentIds = createDocumentsForProject(project).map((document) => document.id);
-  return [
-    {
-      id: `${prefix}-application-sector`, projectId: project.id, projectName: project.name, name: profile.approval, authority: profile.authority,
-      referenceNumber: `${prefix.toUpperCase().slice(-8)}-001`, status: "under_review", submittedAt: project.updatedAt, lastUpdatedAt: project.updatedAt,
-      pendingAction: "Review project-specific evidence", relatedTaskIds: [`${prefix}-sector-approval`], documents: documentIds.slice(0, 2),
-      history: [{ id: `${prefix}-history-sector`, timestamp: project.updatedAt, status: "under_review", message: `${profile.approval} is under illustrative review for ${project.name}.` }]
-    },
-    {
-      id: `${prefix}-application-license`, projectId: project.id, projectName: project.name, name: `${project.name} operating license`, authority: profile.authority,
-      referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: project.updatedAt,
-      pendingAction: "Attach project-specific documents", relatedTaskIds: [`${prefix}-operating-license`], documents: [documentIds[2]],
-      history: [{ id: `${prefix}-history-license`, timestamp: project.updatedAt, status: "draft", message: `Draft operating license application created for ${project.name}.` }]
-    }
-  ];
+  const predefined: Record<string, ApplicationRecord[]> = {
+    [projectId]: defaultApplications,
+    "proj-apex-textile": [
+      { id: "apex-app-factory", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Textile factory license application", authority: "Factory licensing office", referenceNumber: "AT-4102", status: "under_review", submittedAt: "2026-09-25T00:00:00Z", lastUpdatedAt: "2026-10-01T00:00:00Z", pendingAction: "Review textile layout comments", relatedTaskIds: ["proj-apex-textile-operating-license"], documents: ["apex-doc-land", "apex-doc-layout"], history: [{ id: "apex-hist-factory", timestamp: "2026-10-01T00:00:00Z", status: "under_review", message: "Textile factory license is under illustrative review." }] },
+      { id: "apex-app-pollution", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Dyeing and effluent consent application", authority: "Pollution control board", referenceNumber: "AT-4103", status: "changes_requested", submittedAt: "2026-09-22T00:00:00Z", lastUpdatedAt: "2026-09-29T00:00:00Z", pendingAction: "Update chemical process evidence", relatedTaskIds: ["proj-apex-textile-sector-approval"], documents: ["apex-doc-process"], history: [{ id: "apex-hist-pollution", timestamp: "2026-09-29T00:00:00Z", status: "changes_requested", message: "Additional textile process evidence was requested." }] },
+      { id: "apex-app-water", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Textile water connection application", authority: "Municipal utilities office", referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: "2026-09-20T00:00:00Z", pendingAction: "Attach water demand estimate", relatedTaskIds: ["proj-apex-textile-operating-license"], documents: [], history: [{ id: "apex-hist-water", timestamp: "2026-09-20T00:00:00Z", status: "draft", message: "Draft water connection request created." }] }
+    ],
+    "proj-mehta-metalworks": [
+      { id: "mehta-app-environment", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", name: "Metal process environmental consent application", authority: "Pollution control board", referenceNumber: "MM-1201", status: "under_review", submittedAt: "2026-09-30T00:00:00Z", lastUpdatedAt: "2026-10-02T00:00:00Z", pendingAction: "Review emissions plan", relatedTaskIds: ["proj-mehta-metalworks-sector-approval"], documents: ["mehta-doc-emissions"], history: [{ id: "mehta-hist-environment", timestamp: "2026-10-02T00:00:00Z", status: "under_review", message: "Metal process consent is under illustrative review." }] },
+      { id: "mehta-app-fire", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", name: "Scrap processing fire safety application", authority: "State fire services", referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: "2026-10-01T00:00:00Z", pendingAction: "Attach safety layout", relatedTaskIds: ["proj-mehta-metalworks-inspection"], documents: ["mehta-doc-safety"], history: [{ id: "mehta-hist-fire", timestamp: "2026-10-01T00:00:00Z", status: "draft", message: "Draft fire safety request created." }] }
+    ]
+  };
+  return predefined[project.id] ?? [];
 }
 
 const defaultAssistantTools: AssistantTool[] = [
@@ -1271,6 +1246,29 @@ export const mockDocumentApi = {
     const nextDocs = [nextDoc, ...docs];
     writeStoredJson(DOCUMENTS_STORAGE_KEY, nextDocs);
     return waitForDemo(nextDocs.filter((doc) => doc.projectId === input.projectId));
+  },
+  async updateDocumentStatus(documentId: string, status: ProjectDocument["verificationStatus"], reason?: string): Promise<ProjectDocument[]> {
+    const documents: ProjectDocument[] = ensureDocuments().map((document) => document.id === documentId ? { ...document, verificationStatus: status, requirementStatus: status === "verified" ? "satisfied" as const : "needs_review" as const } : document);
+    writeStoredJson(DOCUMENTS_STORAGE_KEY, documents);
+
+    const relatedApplications = ensureApplications().filter((application) => application.documents.includes(documentId));
+    if (relatedApplications.length > 0) {
+      const now = new Date().toISOString();
+      const applications = ensureApplications().map((application) => {
+        if (!application.documents.includes(documentId) || status !== "needs_review") return application;
+        return {
+          ...application,
+          status: "changes_requested" as const,
+          pendingAction: reason ?? "Review the requested document correction",
+          lastUpdatedAt: now,
+          history: [...application.history, { id: `hist-${Date.now()}-${application.id}`, timestamp: now, status: "changes_requested" as const, message: reason ?? "Officer requested a document correction." }]
+        };
+      });
+      writeStoredJson(APPLICATIONS_STORAGE_KEY, applications);
+      const notifications = ensureNotifications();
+      writeStoredJson(NOTIFICATIONS_STORAGE_KEY, [...relatedApplications.map((application) => ({ id: `notification-${Date.now()}-${application.id}`, type: "application" as const, title: "Document correction requested", description: reason ?? "An officer requested a correction to a submitted document.", timestamp: now, projectId: application.projectId, taskId: application.relatedTaskIds[0], unread: true })), ...notifications]);
+    }
+    return waitForDemo(documents);
   }
 };
 
@@ -1477,22 +1475,24 @@ const defaultProjects: MockProject[] = [
   { id: 'proj-mehta-metalworks', name: 'Mehta Metalworks', sector: 'Metals', stage: 'land_acquisition', status: 'active', location: 'Rajkot, Gujarat', organization: 'Mehta Industries', description: 'New steel re-rolling mill with integrated scrap processing.', investmentAmount: '₹22 Cr', siteStatus: 'identified', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', progress: 34, approvalCount: 8, completedApprovals: 1 }
 ];
 
-function getSectorProfile(sector: string) {
-  const normalized = sector.toLowerCase();
-  if (normalized.includes("food")) {
-    return { approval: "Food safety licensing", document: "Food safety and process plan", authority: "Food safety authority" };
-  }
-  if (normalized.includes("textile")) {
-    return { approval: "Dyeing and effluent consent", document: "Textile process and chemical plan", authority: "Pollution control board" };
-  }
-  if (normalized.includes("metal") || normalized.includes("steel")) {
-    return { approval: "Metal process environmental consent", document: "Metal process and emissions plan", authority: "Pollution control board" };
-  }
-  return { approval: `${sector} operating approval`, document: `${sector} process plan`, authority: "Relevant authority" };
-}
-
 function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
-  const profile = getSectorProfile(project.sector);
+  const seed = {
+    "proj-apex-textile": {
+      approval: "Dyeing and effluent consent",
+      document: "Textile process and chemical plan",
+      authority: "Pollution control board",
+      license: "Textile factory license"
+    },
+    "proj-mehta-metalworks": {
+      approval: "Metal process environmental consent",
+      document: "Metal process and emissions plan",
+      authority: "Pollution control board",
+      license: "Metalworks operating license"
+    }
+  }[project.id];
+  if (!seed) {
+    throw new Error(`No predefined roadmap exists for project ${project.id}.`);
+  }
   const prefix = project.id;
   const ids = {
     site: `${prefix}-site-plan`,
@@ -1521,9 +1521,9 @@ function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
   };
   const tasks = [
     task("site-layout-plan", { id: ids.site, title: `${project.name} site plan`, description: `Illustrative site and infrastructure planning for ${project.name}.`, required_documents: [`${project.name} site plan.pdf`], status: "in_progress", readiness: "at_risk", available_actions: ["mark_complete", "add_note"] }),
-    task("effluent-treatment-review", { id: ids.sector, title: profile.approval, description: `Review the ${profile.approval.toLowerCase()} requirements for ${project.name}.`, authority: profile.authority, required_documents: [`${profile.document}.pdf`], prerequisites: [ids.site], status: "pending", readiness: "needs_review", available_actions: ["submit_for_review", "mark_in_progress", "add_note"] }),
+    task("effluent-treatment-review", { id: ids.sector, title: seed.approval, description: `Review the ${seed.approval.toLowerCase()} requirements for ${project.name}.`, authority: seed.authority, required_documents: [`${seed.document}.pdf`], prerequisites: [ids.site], status: "pending", readiness: "needs_review", available_actions: ["submit_for_review", "mark_in_progress", "add_note"] }),
     task("inspection-site", { id: ids.inspection, title: `${project.name} site inspection`, description: `Coordinate an illustrative readiness inspection for ${project.name}.`, prerequisites: [ids.site], status: "pending", readiness: "at_risk", required_documents: ["Inspection readiness checklist.pdf"], available_actions: ["mark_in_progress", "add_note"] }),
-    task("factory-license", { id: ids.license, title: `${project.name} operating license`, description: `Downstream operating approval after the project-specific review and inspection.`, authority: profile.authority, prerequisites: [ids.sector, ids.inspection], status: "blocked", readiness: "blocked", blocked_reason: `Awaiting ${profile.approval.toLowerCase()} and site inspection.`, required_documents: [`${project.name} license application.pdf`], available_actions: ["mark_in_progress", "submit_for_review", "add_note"] })
+    task("factory-license", { id: ids.license, title: seed.license, description: `Downstream operating approval after the project-specific review and inspection.`, authority: seed.authority, prerequisites: [ids.sector, ids.inspection], status: "blocked", readiness: "blocked", blocked_reason: `Awaiting ${seed.approval.toLowerCase()} and site inspection.`, required_documents: [`${project.name} license application.pdf`], available_actions: ["mark_in_progress", "submit_for_review", "add_note"] })
   ];
   tasks[0].dependents = [ids.sector, ids.inspection];
   tasks[1].dependents = [ids.license];

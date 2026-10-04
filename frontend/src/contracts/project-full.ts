@@ -1,5 +1,7 @@
 import type { ProjectStage, SiteStatus } from './project';
 
+export type { ProjectStage, SiteStatus } from './project';
+
 export interface MockProject {
   id: string;
   name: string;

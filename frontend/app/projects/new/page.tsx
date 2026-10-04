@@ -204,7 +204,7 @@ export default function NewProjectPage() {
             </Panel>
 
             <div className="flex justify-end gap-3">
-              <Button type="button" variant="outline" onClick={() => router.push("/projects")}>
+              <Button type="button" variant="secondary" onClick={() => router.push("/projects")}>
                 Cancel
               </Button>
               <Button type="submit" variant="primary" disabled={isSubmitting}>

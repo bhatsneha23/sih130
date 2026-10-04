@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/app-shell';
+import { OfficerWorkspace } from '@/components/officer-workspace';
 import { getDocuments, getProjects, uploadDocument } from '@/lib/api';
 import type { MockProject } from '@/contracts/project-full';
 import type { ProjectDocument, UploadDocumentInput } from '@/contracts/workflows';
 import { PageHeader, Panel, Button, StatusBadge, EmptyState } from '@/components/ui';
+import { getStoredDemoRole, type DemoRole } from '@/lib/demo-role';
 
 export default function DocumentsPage() {
   const router = useRouter();
@@ -30,6 +32,9 @@ export default function DocumentsPage() {
     description: ''
   });
   const [isUploading, setIsUploading] = useState(false);
+  const [role, setRole] = useState<DemoRole>('Applicant');
+
+  useEffect(() => setRole(getStoredDemoRole()), []);
 
   const selectedProject = projects.find((project) => project.id === projectFilter);
   const uploadProject = selectedProject ?? projects[0];
@@ -54,6 +59,7 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     fetchDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectFilter]);
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -99,7 +105,7 @@ export default function DocumentsPage() {
     switch (status) {
       case 'satisfied': return 'positive';
       case 'needs_review': return 'warning';
-      case 'missing': return 'critical';
+      case 'missing': return 'warning';
       default: return 'neutral';
     }
   };
@@ -113,13 +119,17 @@ export default function DocumentsPage() {
 
   const categories = ['All', 'Engineering', 'Utilities', 'Environmental', 'Safety', 'Operations', 'Other'];
 
+  if (role === 'Officer') {
+    return <OfficerWorkspace mode="documents" />;
+  }
+
   return (
     <AppShell>
       <div className="space-y-6">
         <PageHeader 
           title="Documents" 
           description={selectedProject ? `Documents for ${selectedProject.name}.` : "Manage and review documents across all projects."}
-          action={
+          actions={
             <Button variant="primary" onClick={() => setIsUploadOpen(true)}>
               Upload document
             </Button>
@@ -236,7 +246,7 @@ export default function DocumentsPage() {
                           <p className="text-slate-500 italic">No related tasks</p>
                         )}
                         <div className="mt-4 flex gap-2">
-                           <Button variant="secondary" size="sm">View full document</Button>
+                           <Button variant="secondary">View full document</Button>
                         </div>
                       </div>
                     </div>

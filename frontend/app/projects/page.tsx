@@ -72,7 +72,7 @@ export default function ProjectsPage() {
                 <Panel className="h-full transition-shadow hover:shadow-md cursor-pointer">
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-bold text-[#172b3a] text-lg group-hover:text-[#27628a] transition-colors">{project.name}</h3>
-                    <StatusBadge status={project.status} />
+                    <StatusBadge tone={project.status === "completed" ? "positive" : project.status === "on_hold" ? "warning" : "info"}>{project.status}</StatusBadge>
                   </div>
                   
                   <div className="flex flex-wrap gap-2 mb-4 text-sm text-slate-500">

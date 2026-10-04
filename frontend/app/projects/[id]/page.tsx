@@ -37,7 +37,7 @@ export default function ProjectDetailPage() {
         description={project ? "Detailed view of the project and its current status." : ""}
         actions={
           <Link href="/projects">
-            <Button variant="outline">Back to Projects</Button>
+            <Button variant="secondary">Back to Projects</Button>
           </Link>
         }
       />
@@ -61,7 +61,7 @@ export default function ProjectDetailPage() {
               <Panel>
                 <div className="flex justify-between items-start mb-6">
                   <h3 className="text-xl font-bold text-[#172b3a]">Project Overview</h3>
-                  <StatusBadge status={project.status} />
+                  <StatusBadge tone={project.status === "completed" ? "positive" : project.status === "on_hold" ? "warning" : "info"}>{project.status}</StatusBadge>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-y-6 gap-x-4">
@@ -120,17 +120,17 @@ export default function ProjectDetailPage() {
                 <h3 className="text-sm font-bold uppercase tracking-wider text-[#172b3a] mb-4">Quick Links</h3>
                 <div className="space-y-3 flex flex-col">
                   <Link href={`/roadmap?projectId=${encodeURIComponent(project.id)}`}>
-                    <Button variant="outline" className="w-full justify-start text-left bg-white">
+                    <Button variant="secondary" className="w-full justify-start text-left bg-white">
                       View Roadmap
                     </Button>
                   </Link>
                   <Link href={`/documents?projectId=${encodeURIComponent(project.id)}`}>
-                    <Button variant="outline" className="w-full justify-start text-left bg-white">
+                    <Button variant="secondary" className="w-full justify-start text-left bg-white">
                       View Documents
                     </Button>
                   </Link>
                   <Link href={`/applications?projectId=${encodeURIComponent(project.id)}`}>
-                    <Button variant="outline" className="w-full justify-start text-left bg-white">
+                    <Button variant="secondary" className="w-full justify-start text-left bg-white">
                       View Applications
                     </Button>
                   </Link>

@@ -11,7 +11,7 @@ export function Button({
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost";
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const variants = {
     primary:
@@ -43,7 +43,7 @@ export function Panel({
 }: {
   title?: string;
   action?: ReactNode;
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
 }) {
   return (

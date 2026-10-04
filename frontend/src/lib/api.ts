@@ -27,6 +27,7 @@ import {
   mockOfficerReviewApi,
   mockAdminApi
 } from "@/lib/mock-services";
+import type { DocumentStatus } from "@/contracts/workflows";
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(new URL(path, apiBaseUrl), {
@@ -62,6 +63,13 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<Projec
   }
 
   return apiGet<ProjectDocument[]>(`/projects/${input.projectId}/documents`);
+}
+
+export async function updateDocumentStatus(documentId: string, status: DocumentStatus, reason?: string): Promise<ProjectDocument[]> {
+  if (isMockMode) {
+    return mockDocumentApi.updateDocumentStatus(documentId, status, reason);
+  }
+  return apiGet<ProjectDocument[]>(`/documents/${documentId}`);
 }
 
 export async function getApplications(projectId?: string): Promise<ApplicationRecord[]> {

@@ -111,7 +111,7 @@ export function ApplicationWorkspace() {
 
   async function handleStatusUpdate(applicationId: string, status: ApplicationStatus, messageOverride?: string) {
     try {
-      const next = await updateApplicationStatus(PROJECT_ID, applicationId, status, messageOverride ?? `Mock status update to ${status}.`);
+      const next = await updateApplicationStatus(selectedApplication?.projectId ?? activeProjectId, applicationId, status, messageOverride ?? `Mock status update to ${status}.`);
       setApplications(next);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "The status update could not be applied.");

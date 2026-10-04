@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui";
@@ -93,17 +93,21 @@ function Sidebar({
   );
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, forcedRole }: { children: React.ReactNode; forcedRole?: DemoRole }) {
+  const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [currentRole, setCurrentRole] = useState<DemoRole>("Applicant");
+  const [currentRole, setCurrentRole] = useState<DemoRole>(forcedRole ?? "Applicant");
 
   useEffect(() => {
-    setCurrentRole(getStoredDemoRole());
-  }, []);
+    setCurrentRole(forcedRole ?? getStoredDemoRole());
+  }, [forcedRole]);
 
   const handleRoleChange = (role: DemoRole) => {
+    const leavingOfficer = currentRole === "Officer" && role !== "Officer";
     setCurrentRole(role);
     setStoredDemoRole(role);
+    if (role === "Officer") router.push("/officer");
+    else if (leavingOfficer) router.push("/");
   };
 
   const user = getRoleUser(currentRole);

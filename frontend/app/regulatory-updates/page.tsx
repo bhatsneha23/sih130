@@ -43,7 +43,7 @@ export default function RegulatoryUpdatesPage() {
   const filteredUpdates = useMemo(() => {
     return updates.filter((u) => {
       // Handle mock data incompatibilities
-      const anyU = u as any;
+      const anyU = u as unknown as Record<string, string>;
       const titleMatch = u.title.toLowerCase().includes(search.toLowerCase());
       const summaryMatch = u.summary.toLowerCase().includes(search.toLowerCase());
       if (search && !titleMatch && !summaryMatch) return false;
@@ -118,7 +118,7 @@ export default function RegulatoryUpdatesPage() {
       ) : (
         <div className="space-y-4">
           {filteredUpdates.map((u) => {
-            const anyU = u as any;
+            const anyU = u as unknown as Record<string, string>;
             const source = u.source || anyU.authority || "Unknown Source";
             const publishedAt = u.publishedAt || anyU.date || "Unknown Date";
             const areas: string[] = u.affectedAreas || (anyU.impact ? [anyU.impact] : []);
@@ -130,7 +130,7 @@ export default function RegulatoryUpdatesPage() {
                   <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-3">
                       <h3 className="text-base font-bold text-[#172b3a]">{u.title}</h3>
-                      <StatusBadge tone={mapStatus(u.status) as any}>{u.status.charAt(0).toUpperCase() + u.status.slice(1)}</StatusBadge>
+                      <StatusBadge tone={mapStatus(u.status) as "positive" | "warning" | "neutral" | "info"}>{u.status.charAt(0).toUpperCase() + u.status.slice(1)}</StatusBadge>
                     </div>
                     <p className="text-sm text-slate-500">{source} • {publishedAt}</p>
                     {areas.length > 0 && (
@@ -149,7 +149,7 @@ export default function RegulatoryUpdatesPage() {
                       <div className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
                         <div className="mb-2 flex items-center gap-2">
                           <span className="font-semibold">Source Verification:</span>
-                          <StatusBadge tone={u.sourceVerificationStatus === 'verified' ? 'positive' : 'warning' as any}>
+                          <StatusBadge tone={u.sourceVerificationStatus === 'verified' ? 'positive' : 'warning' as "positive" | "warning" | "neutral" | "info"}>
                             {u.sourceVerificationStatus || "illustrative"}
                           </StatusBadge>
                         </div>
