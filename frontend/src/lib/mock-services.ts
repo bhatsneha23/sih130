@@ -465,10 +465,20 @@ const roadmapBase: RoadmapWorkspace = {
   ]
 };
 
-function ensureRoadmapData(): RoadmapWorkspace {
-  const stored = readStoredRoadmap();
+function ensureRoadmapData(projectIdValue = roadmapBase.project_id): RoadmapWorkspace {
+  const stored = readStoredRoadmap(projectIdValue);
   if (stored) {
     return stored;
+  }
+
+  if (projectIdValue !== roadmapBase.project_id) {
+    const project = ensureProjects().find((entry) => entry.id === projectIdValue);
+    if (!project) {
+      throw new Error(`Project ${projectIdValue} not found in mock roadmap data.`);
+    }
+    const generated = createProjectRoadmap(project);
+    writeStoredRoadmap(generated);
+    return generated;
   }
 
   const edges: RoadmapEdge[] = [
@@ -496,12 +506,12 @@ function ensureRoadmapData(): RoadmapWorkspace {
   return base;
 }
 
-function readStoredRoadmap(): RoadmapWorkspace | null {
+function readStoredRoadmap(projectIdValue = roadmapBase.project_id): RoadmapWorkspace | null {
   if (typeof window === "undefined") {
     return null;
   }
 
-  const rawValue = window.localStorage.getItem(ROADMAP_STORAGE_KEY);
+  const rawValue = window.localStorage.getItem(roadmapStorageKey(projectIdValue));
   if (!rawValue) {
     return null;
   }
@@ -518,7 +528,7 @@ function writeStoredRoadmap(roadmap: RoadmapWorkspace): void {
     return;
   }
 
-  window.localStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify(roadmap));
+  window.localStorage.setItem(roadmapStorageKey(roadmap.project_id), JSON.stringify(roadmap));
 }
 
 function computeRoadmapSummary(workspace: RoadmapWorkspace): RoadmapWorkspace {
@@ -571,7 +581,7 @@ function syncTaskDependents(tasks: RoadmapTask[]): RoadmapTask[] {
 }
 
 function ensureGraphMatchesTasks(tasks: RoadmapTask[]): RoadmapWorkspace["graph"] {
-  const graph = ensureRoadmapData().graph;
+  const graph = ensureRoadmapData(tasks[0]?.id.split("-").slice(0, -2).join("-") || roadmapBase.project_id).graph;
   const nextGraph = {
     ...graph,
     nodes: tasks.map((task) => ({ ...task }))
@@ -596,7 +606,7 @@ export const mockDashboardApi = {
 
 export const mockRoadmapApi = {
   async getProjectRoadmap(projectId: string): Promise<RoadmapWorkspace> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     if (projectId !== workspace.project_id) {
       throw new Error(`Project ${projectId} not found in mock roadmap data.`);
     }
@@ -606,7 +616,7 @@ export const mockRoadmapApi = {
   },
 
   async getTask(projectId: string, taskId: string): Promise<RoadmapTask> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     const task = workspace.tasks.find((entry) => entry.id === taskId);
     if (!task) {
       throw new Error(`Roadmap task ${taskId} not found.`);
@@ -618,7 +628,7 @@ export const mockRoadmapApi = {
   },
 
   async addTaskNote(projectId: string, taskId: string, noteText: string): Promise<RoadmapWorkspace> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     if (projectId !== workspace.project_id) {
       throw new Error(`Project ${projectId} not found in mock roadmap data.`);
     }
@@ -668,7 +678,7 @@ export const mockRoadmapApi = {
   },
 
   async updateTask(projectId: string, taskId: string, updates: TaskUpdateInput): Promise<RoadmapWorkspace> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     if (projectId !== workspace.project_id) {
       throw new Error(`Project ${projectId} not found in mock roadmap data.`);
     }
@@ -718,7 +728,7 @@ export const mockRoadmapApi = {
   },
 
   async performTaskAction(projectId: string, taskId: string, actionId: RoadmapTaskActionId): Promise<RoadmapWorkspace> {
-    const workspace = ensureRoadmapData();
+    const workspace = ensureRoadmapData(projectId);
     if (projectId !== workspace.project_id) {
       throw new Error(`Project ${projectId} not found in mock roadmap data.`);
     }
@@ -793,7 +803,8 @@ export const mockRoadmapApi = {
 
   async reset(): Promise<void> {
     if (typeof window !== "undefined") {
-      window.localStorage.removeItem(ROADMAP_STORAGE_KEY);
+      window.localStorage.removeItem(roadmapStorageKey(roadmapBase.project_id));
+      ensureProjects().forEach((project) => window.localStorage.removeItem(roadmapStorageKey(project.id)));
     }
   }
 };
@@ -830,6 +841,10 @@ function writeStoredJson<T>(key: string, value: T): void {
   }
 
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function roadmapStorageKey(projectIdValue: string): string {
+  return `${ROADMAP_STORAGE_KEY}:${projectIdValue}`;
 }
 
 const projectId = "proj-vasavi-food-processing";
@@ -956,6 +971,53 @@ const defaultApplications: ApplicationRecord[] = [
     ]
   }
 ];
+
+function createDocumentsForProject(project: MockProject): ProjectDocument[] {
+  if (project.id === projectId) {
+    return defaultDocuments;
+  }
+
+  const profile = getSectorProfile(project.sector);
+  const prefix = project.id;
+  return [
+    {
+      id: `${prefix}-doc-site`, name: `${project.name} site plan.pdf`, type: "Site plan", category: "Engineering", projectId: project.id, projectName: project.name,
+      uploadedAt: project.updatedAt, expiryAt: null, verificationStatus: "pending", sizeLabel: "1.8 MB", description: `Illustrative site plan for ${project.name}.`, relatedTaskIds: [`${prefix}-site-plan`], requirementStatus: "needs_review", sourceVerificationStatus: "illustrative"
+    },
+    {
+      id: `${prefix}-doc-sector`, name: `${profile.document}.pdf`, type: "Sector process plan", category: "Operations", projectId: project.id, projectName: project.name,
+      uploadedAt: project.updatedAt, expiryAt: null, verificationStatus: "needs_review", sizeLabel: "2.1 MB", description: `Project-specific ${profile.document.toLowerCase()} for ${project.name}.`, relatedTaskIds: [`${prefix}-sector-approval`], requirementStatus: "missing", sourceVerificationStatus: "illustrative"
+    },
+    {
+      id: `${prefix}-doc-inspection`, name: `${project.name} inspection checklist.pdf`, type: "Inspection record", category: "Safety", projectId: project.id, projectName: project.name,
+      uploadedAt: project.updatedAt, expiryAt: null, verificationStatus: "pending", sizeLabel: "920 KB", description: `Illustrative inspection readiness checklist for ${project.name}.`, relatedTaskIds: [`${prefix}-inspection`], requirementStatus: "missing", sourceVerificationStatus: "unverified"
+    }
+  ];
+}
+
+function createApplicationsForProject(project: MockProject): ApplicationRecord[] {
+  if (project.id === projectId) {
+    return defaultApplications;
+  }
+
+  const profile = getSectorProfile(project.sector);
+  const prefix = project.id;
+  const documentIds = createDocumentsForProject(project).map((document) => document.id);
+  return [
+    {
+      id: `${prefix}-application-sector`, projectId: project.id, projectName: project.name, name: profile.approval, authority: profile.authority,
+      referenceNumber: `${prefix.toUpperCase().slice(-8)}-001`, status: "under_review", submittedAt: project.updatedAt, lastUpdatedAt: project.updatedAt,
+      pendingAction: "Review project-specific evidence", relatedTaskIds: [`${prefix}-sector-approval`], documents: documentIds.slice(0, 2),
+      history: [{ id: `${prefix}-history-sector`, timestamp: project.updatedAt, status: "under_review", message: `${profile.approval} is under illustrative review for ${project.name}.` }]
+    },
+    {
+      id: `${prefix}-application-license`, projectId: project.id, projectName: project.name, name: `${project.name} operating license`, authority: profile.authority,
+      referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: project.updatedAt,
+      pendingAction: "Attach project-specific documents", relatedTaskIds: [`${prefix}-operating-license`], documents: [documentIds[2]],
+      history: [{ id: `${prefix}-history-license`, timestamp: project.updatedAt, status: "draft", message: `Draft operating license application created for ${project.name}.` }]
+    }
+  ];
+}
 
 const defaultAssistantTools: AssistantTool[] = [
   { id: "web_search", label: "Web Search", detail: "External web lookup for general guidance", state: "available" },
@@ -1084,19 +1146,35 @@ const defaultApprovalRequests: ApprovalRequest[] = [
 function ensureDocuments(): ProjectDocument[] {
   const stored = readStoredJson<ProjectDocument[]>(DOCUMENTS_STORAGE_KEY);
   if (stored) {
+    const knownProjects = new Set(stored.map((document) => document.projectId));
+    const additions = ensureProjects().filter((project) => !knownProjects.has(project.id)).flatMap(createDocumentsForProject);
+    if (additions.length > 0) {
+      const merged = [...stored, ...additions];
+      writeStoredJson(DOCUMENTS_STORAGE_KEY, merged);
+      return merged;
+    }
     return stored;
   }
-  writeStoredJson(DOCUMENTS_STORAGE_KEY, defaultDocuments);
-  return defaultDocuments;
+  const seeded = ensureProjects().flatMap(createDocumentsForProject);
+  writeStoredJson(DOCUMENTS_STORAGE_KEY, seeded);
+  return seeded;
 }
 
 function ensureApplications(): ApplicationRecord[] {
   const stored = readStoredJson<ApplicationRecord[]>(APPLICATIONS_STORAGE_KEY);
   if (stored) {
+    const knownProjects = new Set(stored.map((application) => application.projectId));
+    const additions = ensureProjects().filter((project) => !knownProjects.has(project.id)).flatMap(createApplicationsForProject);
+    if (additions.length > 0) {
+      const merged = [...stored, ...additions];
+      writeStoredJson(APPLICATIONS_STORAGE_KEY, merged);
+      return merged;
+    }
     return stored;
   }
-  writeStoredJson(APPLICATIONS_STORAGE_KEY, defaultApplications);
-  return defaultApplications;
+  const seeded = ensureProjects().flatMap(createApplicationsForProject);
+  writeStoredJson(APPLICATIONS_STORAGE_KEY, seeded);
+  return seeded;
 }
 
 function ensureConversations(): AssistantConversation[] {
@@ -1166,9 +1244,10 @@ function buildAssistantReply(prompt: string): AssistantMessage {
 }
 
 export const mockDocumentApi = {
-  async getDocuments(projectIdValue: string): Promise<ProjectDocument[]> {
-    const docs = ensureDocuments().filter((doc) => doc.projectId === projectIdValue);
-    return waitForDemo(docs);
+  async getDocuments(projectIdValue?: string): Promise<ProjectDocument[]> {
+    const docs = ensureDocuments();
+    const filtered = projectIdValue ? docs.filter((doc) => doc.projectId === projectIdValue) : docs;
+    return waitForDemo(filtered);
   },
   async uploadDocument(input: UploadDocumentInput): Promise<ProjectDocument[]> {
     const docs = ensureDocuments();
@@ -1196,16 +1275,18 @@ export const mockDocumentApi = {
 };
 
 export const mockApplicationsApi = {
-  async getApplications(projectIdValue: string): Promise<ApplicationRecord[]> {
-    const apps = ensureApplications().filter((app) => app.projectId === projectIdValue);
-    return waitForDemo(apps);
+  async getApplications(projectIdValue?: string): Promise<ApplicationRecord[]> {
+    const apps = ensureApplications();
+    const filtered = projectIdValue ? apps.filter((app) => app.projectId === projectIdValue) : apps;
+    return waitForDemo(filtered);
   },
   async createDraftApplication(projectIdValue: string, name: string): Promise<ApplicationRecord[]> {
     const apps = ensureApplications();
+    const selectedProject = ensureProjects().find((project) => project.id === projectIdValue);
     const draft: ApplicationRecord = {
       id: `app-${Date.now()}`,
       projectId: projectIdValue,
-      projectName,
+      projectName: selectedProject?.name ?? "Selected project",
       name,
       authority: "Applicant desk",
       referenceNumber: null,
@@ -1395,6 +1476,74 @@ const defaultProjects: MockProject[] = [
   { id: 'proj-apex-textile', name: 'Apex Textile Expansion', sector: 'Textiles', stage: 'pre_operational', status: 'active', location: 'Surat, Gujarat', organization: 'Apex Textiles Ltd', description: 'Expansion of dyeing and finishing capacity for export-quality fabrics.', investmentAmount: '₹8.2 Cr', siteStatus: 'leased', createdAt: '2026-07-20T00:00:00Z', updatedAt: '2026-09-28T00:00:00Z', progress: 59, approvalCount: 6, completedApprovals: 2 },
   { id: 'proj-mehta-metalworks', name: 'Mehta Metalworks', sector: 'Metals', stage: 'land_acquisition', status: 'active', location: 'Rajkot, Gujarat', organization: 'Mehta Industries', description: 'New steel re-rolling mill with integrated scrap processing.', investmentAmount: '₹22 Cr', siteStatus: 'identified', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', progress: 34, approvalCount: 8, completedApprovals: 1 }
 ];
+
+function getSectorProfile(sector: string) {
+  const normalized = sector.toLowerCase();
+  if (normalized.includes("food")) {
+    return { approval: "Food safety licensing", document: "Food safety and process plan", authority: "Food safety authority" };
+  }
+  if (normalized.includes("textile")) {
+    return { approval: "Dyeing and effluent consent", document: "Textile process and chemical plan", authority: "Pollution control board" };
+  }
+  if (normalized.includes("metal") || normalized.includes("steel")) {
+    return { approval: "Metal process environmental consent", document: "Metal process and emissions plan", authority: "Pollution control board" };
+  }
+  return { approval: `${sector} operating approval`, document: `${sector} process plan`, authority: "Relevant authority" };
+}
+
+function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
+  const profile = getSectorProfile(project.sector);
+  const prefix = project.id;
+  const ids = {
+    site: `${prefix}-site-plan`,
+    sector: `${prefix}-sector-approval`,
+    inspection: `${prefix}-inspection`,
+    license: `${prefix}-operating-license`
+  };
+  const now = new Date().toISOString();
+  const task = (templateId: string, overrides: Partial<RoadmapTask>): RoadmapTask => {
+    const template = roadmapBase.tasks.find((entry) => entry.id === templateId);
+    if (!template) throw new Error(`Roadmap template ${templateId} not found.`);
+    return makeRoadmapTask({
+      ...template,
+      id: `${prefix}-${templateId}`,
+      status: "not_started",
+      readiness: "needs_review",
+      source_verification_status: "illustrative",
+      source_refs: [],
+      prerequisites: [],
+      dependents: [],
+      notes: [],
+      activity: [],
+      last_updated_at: now,
+      ...overrides
+    });
+  };
+  const tasks = [
+    task("site-layout-plan", { id: ids.site, title: `${project.name} site plan`, description: `Illustrative site and infrastructure planning for ${project.name}.`, required_documents: [`${project.name} site plan.pdf`], status: "in_progress", readiness: "at_risk", available_actions: ["mark_complete", "add_note"] }),
+    task("effluent-treatment-review", { id: ids.sector, title: profile.approval, description: `Review the ${profile.approval.toLowerCase()} requirements for ${project.name}.`, authority: profile.authority, required_documents: [`${profile.document}.pdf`], prerequisites: [ids.site], status: "pending", readiness: "needs_review", available_actions: ["submit_for_review", "mark_in_progress", "add_note"] }),
+    task("inspection-site", { id: ids.inspection, title: `${project.name} site inspection`, description: `Coordinate an illustrative readiness inspection for ${project.name}.`, prerequisites: [ids.site], status: "pending", readiness: "at_risk", required_documents: ["Inspection readiness checklist.pdf"], available_actions: ["mark_in_progress", "add_note"] }),
+    task("factory-license", { id: ids.license, title: `${project.name} operating license`, description: `Downstream operating approval after the project-specific review and inspection.`, authority: profile.authority, prerequisites: [ids.sector, ids.inspection], status: "blocked", readiness: "blocked", blocked_reason: `Awaiting ${profile.approval.toLowerCase()} and site inspection.`, required_documents: [`${project.name} license application.pdf`], available_actions: ["mark_in_progress", "submit_for_review", "add_note"] })
+  ];
+  tasks[0].dependents = [ids.sector, ids.inspection];
+  tasks[1].dependents = [ids.license];
+  tasks[2].dependents = [ids.license];
+  const edges: RoadmapEdge[] = [
+    { id: `${prefix}-edge-site-sector`, source: ids.site, target: ids.sector, edge_type: "depends_on" },
+    { id: `${prefix}-edge-site-inspection`, source: ids.site, target: ids.inspection, edge_type: "depends_on" },
+    { id: `${prefix}-edge-sector-license`, source: ids.sector, target: ids.license, edge_type: "depends_on" },
+    { id: `${prefix}-edge-inspection-license`, source: ids.inspection, target: ids.license, edge_type: "depends_on" }
+  ];
+  return computeRoadmapSummary({
+    project_id: project.id,
+    project_name: project.name,
+    location: project.location,
+    last_updated_at: now,
+    summary: roadmapBase.summary,
+    graph: { project_id: project.id, version: 1, generated_at: now, nodes: tasks, edges },
+    tasks
+  });
+}
 
 const defaultRegulatoryUpdates: RegulatoryUpdate[] = [
   { id: 'ru-1', title: 'Revised Emission Standards', source: 'Central Pollution Control Board', publishedAt: '2026-09-15', summary: 'New limits on SO2 and NOx emissions for industrial zones.', affectedAreas: ['Emissions', 'Environment'], status: 'reviewed', sourceVerificationStatus: 'verified' },

@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button, EmptyState, PageHeader, Panel, StatusBadge } from "@/components/ui";
 import type { ProjectDocument } from "@/contracts/workflows";
-import { getDocuments, uploadDocument } from "@/lib/api";
-
-const PROJECT_ID = "proj-vasavi-food-processing";
-const PROJECT_NAME = "Vasavi Food Processing Unit";
+import { getDocuments, getProjects, uploadDocument } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
 
 const documentStatusMeta: Record<ProjectDocument["verificationStatus"], string> = {
   verified: "Verified",
@@ -34,7 +33,11 @@ function formatDate(value?: string | null) {
 }
 
 export function DocumentsWorkspace() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectFilter = searchParams.get("projectId") ?? "all";
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [projects, setProjects] = useState<MockProject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -52,14 +55,21 @@ export function DocumentsWorkspace() {
     relatedTaskIds: "site-layout-plan"
   });
 
+  const uploadProjectId = projectFilter === "all" ? projects[0]?.id ?? "" : projectFilter;
+  const selectedProject = projects.find((project) => project.id === projectFilter);
+
   useEffect(() => {
     let active = true;
 
     async function load() {
       try {
-        const data = await getDocuments(PROJECT_ID);
+        const [data, projectData] = await Promise.all([
+          getDocuments(projectFilter === "all" ? undefined : projectFilter),
+          getProjects()
+        ]);
         if (active) {
           setDocuments(data);
+          setProjects(projectData);
           setSelectedId((current) => current ?? data[0]?.id ?? null);
         }
       } catch (loadError) {
@@ -75,7 +85,7 @@ export function DocumentsWorkspace() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [projectFilter]);
 
   const categories = useMemo(
     () => ["all", ...new Set(documents.map((doc) => doc.category))],
@@ -108,9 +118,14 @@ export function DocumentsWorkspace() {
     setUploadError(null);
 
     try {
+      const project = projects.find((entry) => entry.id === uploadProjectId);
+      if (!project) {
+        setUploadError("Select a project before uploading a document.");
+        return;
+      }
       const nextDocuments = await uploadDocument({
-        projectId: PROJECT_ID,
-        projectName: PROJECT_NAME,
+        projectId: project.id,
+        projectName: project.name,
         name: form.name,
         category: form.category,
         type: form.type,
@@ -119,7 +134,7 @@ export function DocumentsWorkspace() {
         expiryAt: form.expiryAt ? new Date(form.expiryAt).toISOString() : null,
         description: "Simulated upload captured through the browser-side demo workflow."
       });
-      setDocuments(nextDocuments);
+      setDocuments((current) => projectFilter === project.id ? nextDocuments : [nextDocuments[0], ...current]);
       setSelectedId(nextDocuments[0]?.id ?? null);
       setForm({
         name: "",
@@ -147,9 +162,9 @@ export function DocumentsWorkspace() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Projects"
+        eyebrow={selectedProject ? `Project · ${selectedProject.name}` : "All projects"}
         title="Document library"
-        description="Browse uploaded project artifacts, review requirement coverage, and simulate the next evidence updates."
+        description={selectedProject ? `Documents associated with ${selectedProject.name}.` : "Browse uploaded project artifacts across all projects and filter by project when needed."}
         actions={<StatusBadge tone="info">Illustrative data</StatusBadge>}
       />
 
@@ -163,6 +178,15 @@ export function DocumentsWorkspace() {
                 placeholder="Search by title or category"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a]"
               />
+              <select
+                aria-label="Filter by project"
+                value={projectFilter}
+                onChange={(event) => router.push(event.target.value === "all" ? "/documents" : `/documents?projectId=${encodeURIComponent(event.target.value)}`)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a]"
+              >
+                <option value="all">All projects</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
               <select
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
@@ -224,6 +248,17 @@ export function DocumentsWorkspace() {
         <div className="space-y-4">
           <Panel title="Upload evidence">
             <form className="space-y-4" onSubmit={handleUpload}>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-[#172b3a]">Project</label>
+                <select
+                  value={uploadProjectId}
+                  disabled={projectFilter !== "all"}
+                  onChange={(event) => router.push(`/documents?projectId=${encodeURIComponent(event.target.value)}`)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a] disabled:opacity-70"
+                >
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-[#172b3a]">Document title</label>
                 <input

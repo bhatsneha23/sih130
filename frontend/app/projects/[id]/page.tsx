@@ -119,17 +119,17 @@ export default function ProjectDetailPage() {
               <Panel className="bg-[#f8fafc]">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-[#172b3a] mb-4">Quick Links</h3>
                 <div className="space-y-3 flex flex-col">
-                  <Link href="/roadmap">
+                  <Link href={`/roadmap?projectId=${encodeURIComponent(project.id)}`}>
                     <Button variant="outline" className="w-full justify-start text-left bg-white">
                       View Roadmap
                     </Button>
                   </Link>
-                  <Link href="/documents">
+                  <Link href={`/documents?projectId=${encodeURIComponent(project.id)}`}>
                     <Button variant="outline" className="w-full justify-start text-left bg-white">
                       View Documents
                     </Button>
                   </Link>
-                  <Link href="/applications">
+                  <Link href={`/applications?projectId=${encodeURIComponent(project.id)}`}>
                     <Button variant="outline" className="w-full justify-start text-left bg-white">
                       View Applications
                     </Button>

@@ -48,12 +48,12 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   return apiGet<DashboardSummary>("/dashboard/summary");
 }
 
-export async function getDocuments(projectId: string): Promise<ProjectDocument[]> {
+export async function getDocuments(projectId?: string): Promise<ProjectDocument[]> {
   if (isMockMode) {
     return mockDocumentApi.getDocuments(projectId);
   }
 
-  return apiGet<ProjectDocument[]>(`/projects/${projectId}/documents`);
+  return apiGet<ProjectDocument[]>(projectId ? `/projects/${projectId}/documents` : "/documents");
 }
 
 export async function uploadDocument(input: UploadDocumentInput): Promise<ProjectDocument[]> {
@@ -64,12 +64,12 @@ export async function uploadDocument(input: UploadDocumentInput): Promise<Projec
   return apiGet<ProjectDocument[]>(`/projects/${input.projectId}/documents`);
 }
 
-export async function getApplications(projectId: string): Promise<ApplicationRecord[]> {
+export async function getApplications(projectId?: string): Promise<ApplicationRecord[]> {
   if (isMockMode) {
     return mockApplicationsApi.getApplications(projectId);
   }
 
-  return apiGet<ApplicationRecord[]>(`/projects/${projectId}/applications`);
+  return apiGet<ApplicationRecord[]>(projectId ? `/projects/${projectId}/applications` : "/applications");
 }
 
 export async function createApplication(projectId: string, name: string): Promise<ApplicationRecord[]> {

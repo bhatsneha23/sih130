@@ -25,7 +25,7 @@ function Sidebar({
   return (
     <aside
       className={[
-        "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-slate-200 bg-[#172b3a] text-slate-100 transition-transform duration-200 lg:static lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-col overflow-y-auto border-r border-slate-200 bg-[#172b3a] text-slate-100 transition-transform duration-200 lg:static lg:translate-x-0",
         isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       ].join(" ")}
     >
@@ -109,8 +109,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const user = getRoleUser(currentRole);
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb] text-[#172b3a]">
-      <div className="flex min-h-screen">
+    <div className="h-screen overflow-hidden bg-[#f7f9fb] text-[#172b3a]">
+      <div className="flex h-full min-h-0">
         <Sidebar 
           isMobileOpen={mobileNavOpen} 
           onClose={() => setMobileNavOpen(false)} 
@@ -118,8 +118,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onRoleChange={handleRoleChange}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="z-30 shrink-0 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
             <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
               <div className="flex items-center gap-3">
                 <Button
@@ -160,7 +160,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <main className="flex-1">
+          <main className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
               {children}
             </div>

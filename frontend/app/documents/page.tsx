@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/app-shell';
-import { getDocuments, uploadDocument } from '@/lib/api';
+import { getDocuments, getProjects, uploadDocument } from '@/lib/api';
+import type { MockProject } from '@/contracts/project-full';
 import type { ProjectDocument, UploadDocumentInput } from '@/contracts/workflows';
 import { PageHeader, Panel, Button, StatusBadge, EmptyState } from '@/components/ui';
 
 export default function DocumentsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectFilter = searchParams.get('projectId') ?? 'all';
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [projects, setProjects] = useState<MockProject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -25,14 +31,19 @@ export default function DocumentsPage() {
   });
   const [isUploading, setIsUploading] = useState(false);
 
-  const projectId = 'proj-vasavi-food-processing';
+  const selectedProject = projects.find((project) => project.id === projectFilter);
+  const uploadProject = selectedProject ?? projects[0];
 
   const fetchDocuments = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const docs = await getDocuments(projectId);
+      const [docs, projectData] = await Promise.all([
+        getDocuments(projectFilter === 'all' ? undefined : projectFilter),
+        getProjects()
+      ]);
       setDocuments(docs);
+      setProjects(projectData);
     } catch (err) {
       console.error(err);
       setError('Failed to load documents');
@@ -43,15 +54,15 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     fetchDocuments();
-  }, []);
+  }, [projectFilter]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setIsUploading(true);
       const input: UploadDocumentInput = {
-        projectId,
-        projectName: 'Vasavi Food Processing Unit',
+        projectId: uploadProject?.id ?? '',
+        projectName: uploadProject?.name ?? '',
         name: uploadForm.name,
         category: uploadForm.category,
         type: uploadForm.type,
@@ -59,6 +70,8 @@ export default function DocumentsPage() {
         relatedTaskIds: [],
         description: uploadForm.description
       };
+
+      if (!input.projectId) throw new Error('Select a project before uploading a document.');
       
       await uploadDocument(input);
       await fetchDocuments();
@@ -105,7 +118,7 @@ export default function DocumentsPage() {
       <div className="space-y-6">
         <PageHeader 
           title="Documents" 
-          description="Manage and review all project-related documents and compliance artifacts."
+          description={selectedProject ? `Documents for ${selectedProject.name}.` : "Manage and review documents across all projects."}
           action={
             <Button variant="primary" onClick={() => setIsUploadOpen(true)}>
               Upload document
@@ -125,6 +138,15 @@ export default function DocumentsPage() {
               />
             </div>
             <div className="w-full sm:w-48">
+              <select
+                value={projectFilter}
+                onChange={(e) => router.push(e.target.value === 'all' ? '/documents' : `/documents?projectId=${encodeURIComponent(e.target.value)}`)}
+                className="mb-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+                aria-label="Filter documents by project"
+              >
+                <option value="all">All projects</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
@@ -272,7 +294,7 @@ export default function DocumentsPage() {
                 <input
                   type="text"
                   readOnly
-                  value="Vasavi Food Processing Unit"
+                  value={uploadProject?.name ?? 'Select a project'}
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
                 />
               </div>

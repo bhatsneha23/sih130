@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button, EmptyState, PageHeader, Panel, StatusBadge } from "@/components/ui";
 import type { ApplicationRecord, ApplicationStatus } from "@/contracts/workflows";
-import { createApplication, getApplications, updateApplicationStatus } from "@/lib/api";
-
-const PROJECT_ID = "proj-vasavi-food-processing";
-const PROJECT_NAME = "Vasavi Food Processing Unit";
+import { createApplication, getApplications, getProjects, updateApplicationStatus } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
 
 const statusMeta: Record<ApplicationStatus, { label: string; tone: "positive" | "warning" | "neutral" | "info" }> = {
   draft: { label: "Draft", tone: "neutral" },
@@ -32,21 +31,31 @@ function formatDate(value?: string | null) {
 }
 
 export function ApplicationWorkspace() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectFilter = searchParams.get("projectId") ?? "all";
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+  const [projects, setProjects] = useState<MockProject[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | ApplicationStatus>("all");
   const [draftName, setDraftName] = useState("");
+  const activeProjectId = projectFilter === "all" ? projects[0]?.id ?? "" : projectFilter;
+  const selectedProject = projects.find((project) => project.id === projectFilter);
 
   useEffect(() => {
     let active = true;
     async function load() {
       try {
-        const result = await getApplications(PROJECT_ID);
+        const [result, projectData] = await Promise.all([
+          getApplications(projectFilter === "all" ? undefined : projectFilter),
+          getProjects()
+        ]);
         if (active) {
           setApplications(result);
+          setProjects(projectData);
           setSelectedId((current) => current ?? result[0]?.id ?? null);
         }
       } catch (loadError) {
@@ -62,7 +71,7 @@ export function ApplicationWorkspace() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [projectFilter]);
 
   const filtered = useMemo(
     () =>
@@ -87,7 +96,11 @@ export function ApplicationWorkspace() {
   async function handleCreateDraft() {
     const name = draftName.trim() || `Draft application ${applications.length + 1}`;
     try {
-      const next = await createApplication(PROJECT_ID, name);
+      if (!activeProjectId) {
+        setError("Select a project before creating an application draft.");
+        return;
+      }
+      const next = await createApplication(activeProjectId, name);
       setApplications(next);
       setSelectedId(next[0]?.id ?? null);
       setDraftName("");
@@ -116,9 +129,9 @@ export function ApplicationWorkspace() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Applications"
+        eyebrow={selectedProject ? `Project · ${selectedProject.name}` : "All projects"}
         title="Application tracker"
-        description="Track mock submissions, review status, and stay aligned with the next required actions."
+        description={selectedProject ? `Applications associated with ${selectedProject.name}.` : "Track applications across all projects and filter by project, status, or search text."}
         actions={<StatusBadge tone="info">Illustrative</StatusBadge>}
       />
 
@@ -132,6 +145,15 @@ export function ApplicationWorkspace() {
                 placeholder="Search by application or authority"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a]"
               />
+              <select
+                aria-label="Filter by project"
+                value={projectFilter}
+                onChange={(event) => router.push(event.target.value === "all" ? "/applications" : `/applications?projectId=${encodeURIComponent(event.target.value)}`)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#27628a]"
+              >
+                <option value="all">All projects</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
               <select
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}

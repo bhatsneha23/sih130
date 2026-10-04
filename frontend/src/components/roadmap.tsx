@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { Button, EmptyState, PageHeader, Panel, StatusBadge } from "@/components/ui";
@@ -13,8 +14,8 @@ import type {
   SourceVerificationStatus
 } from "@/contracts/roadmap";
 import { mockRoadmapApi } from "@/lib/mock-services";
-
-const ROADMAP_PROJECT_ID = "proj-vasavi-food-processing";
+import { getProjects } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
 
 const statusMeta: Record<
   ApprovalTaskStatus,
@@ -912,7 +913,12 @@ function TaskDetailDrawer({
 }
 
 export function RoadmapWorkspaceView() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedProjectId = searchParams.get("projectId");
   const [workspace, setWorkspace] = useState<RoadmapWorkspace | null>(null);
+  const [projects, setProjects] = useState<MockProject[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(requestedProjectId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -933,7 +939,16 @@ export function RoadmapWorkspaceView() {
       setLoading(true);
       setError(null);
       try {
-        const roadmap = await mockRoadmapApi.getProjectRoadmap(ROADMAP_PROJECT_ID);
+        const projectData = await getProjects();
+        const projectId = requestedProjectId && projectData.some((project) => project.id === requestedProjectId)
+          ? requestedProjectId
+          : projectData[0]?.id;
+        if (!projectId) throw new Error("No projects are available for the roadmap.");
+        if (!cancelled) {
+          setProjects(projectData);
+          setSelectedProjectId(projectId);
+        }
+        const roadmap = await mockRoadmapApi.getProjectRoadmap(projectId);
         if (!cancelled) {
           setWorkspace(roadmap);
           setSelectedTaskId(roadmap.tasks[0]?.id ?? null);
@@ -954,7 +969,7 @@ export function RoadmapWorkspaceView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [requestedProjectId]);
 
   const selectedTask = useMemo(() => {
     if (!workspace || !selectedTaskId) return null;
@@ -976,7 +991,8 @@ export function RoadmapWorkspaceView() {
 
     try {
       setIsSaving(true);
-      const nextWorkspace = await mockRoadmapApi.updateTask(ROADMAP_PROJECT_ID, selectedTask.id, { status: nextStatus });
+      if (!selectedProjectId) return;
+      const nextWorkspace = await mockRoadmapApi.updateTask(selectedProjectId, selectedTask.id, { status: nextStatus });
       setWorkspace(nextWorkspace);
       setSelectedTaskId(selectedTask.id);
       setNotice(`Task status updated to ${statusMeta[nextStatus].label}.`);
@@ -993,7 +1009,8 @@ export function RoadmapWorkspaceView() {
 
     try {
       setIsSaving(true);
-      const nextWorkspace = await mockRoadmapApi.addTaskNote(ROADMAP_PROJECT_ID, selectedTask.id, noteDraft.trim());
+      if (!selectedProjectId) return;
+      const nextWorkspace = await mockRoadmapApi.addTaskNote(selectedProjectId, selectedTask.id, noteDraft.trim());
       setWorkspace(nextWorkspace);
       setNoteDraft("");
       setNotice("Note saved to the roadmap timeline.");
@@ -1038,6 +1055,14 @@ export function RoadmapWorkspaceView() {
           description={`${workspace.location} · The mock service represents illustrative approval activities and dependency relationships only.`}
           actions={
             <div className="flex flex-wrap items-center gap-2">
+              <select
+                aria-label="Select roadmap project"
+                value={selectedProjectId ?? ""}
+                onChange={(event) => router.push(`/roadmap?projectId=${encodeURIComponent(event.target.value)}`)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              >
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
               <Button variant={view === "graph" ? "primary" : "secondary"} type="button" onClick={() => setView("graph")}>
                 Graph view
               </Button>

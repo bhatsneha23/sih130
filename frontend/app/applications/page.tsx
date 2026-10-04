@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader, Panel, Button, StatusBadge, EmptyState } from "@/components/ui";
-import { getApplications, createApplication, updateApplicationStatus } from "@/lib/api";
+import { getApplications, getProjects, createApplication, updateApplicationStatus } from "@/lib/api";
+import type { MockProject } from "@/contracts/project-full";
 import type { ApplicationRecord, ApplicationHistoryEntry } from "@/contracts/workflows";
 
 export default function ApplicationsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectFilter = searchParams.get("projectId") ?? "all";
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+  const [projects, setProjects] = useState<MockProject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,13 +28,18 @@ export default function ApplicationsPage() {
 
   const [selectedApp, setSelectedApp] = useState<ApplicationRecord | null>(null);
 
-  const projectId = "proj-vasavi-food-processing";
+  const selectedProject = projects.find((project) => project.id === projectFilter);
+  const activeProject = selectedProject ?? projects[0];
 
   const fetchApps = async () => {
     try {
       setIsLoading(true);
-      const data = await getApplications(projectId);
+      const [data, projectData] = await Promise.all([
+        getApplications(projectFilter === "all" ? undefined : projectFilter),
+        getProjects()
+      ]);
       setApplications(data);
+      setProjects(projectData);
       if (selectedApp) {
         const updatedSelected = data.find(a => a.id === selectedApp.id);
         if (updatedSelected) setSelectedApp(updatedSelected);
@@ -43,14 +54,15 @@ export default function ApplicationsPage() {
   useEffect(() => {
     fetchApps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [projectFilter]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAppName || !newAppAuthority) return;
     try {
       const nameWithPrefix = `${newAppType}: ${newAppName}`;
-      const updated = await createApplication(projectId, nameWithPrefix);
+      if (!activeProject) return;
+      const updated = await createApplication(activeProject.id, nameWithPrefix);
       setApplications(updated);
       setIsNewDialogOpen(false);
       setNewAppName("");
@@ -63,7 +75,7 @@ export default function ApplicationsPage() {
 
   const handleStatusUpdate = async (appId: string, status: ApplicationRecord["status"]) => {
     try {
-      const updated = await updateApplicationStatus(projectId, appId, status, `Status changed to ${status}`);
+      const updated = await updateApplicationStatus(selectedApp?.projectId ?? activeProject?.id ?? "", appId, status, `Status changed to ${status}`);
       setApplications(updated);
       const updatedSelected = updated.find(a => a.id === appId);
       if (updatedSelected) setSelectedApp(updatedSelected);
@@ -103,7 +115,7 @@ export default function ApplicationsPage() {
       <div className="mx-auto max-w-5xl">
         <PageHeader 
           title="Applications" 
-          description="Track application submissions, review statuses, and follow-up tasks across authorities."
+          description={selectedProject ? `Applications for ${selectedProject.name}.` : "Track application submissions across all projects, review statuses, and follow-up tasks across authorities."}
           actions={
             <Button variant="primary" onClick={() => setIsNewDialogOpen(true)}>
               New application
@@ -113,6 +125,15 @@ export default function ApplicationsPage() {
 
         {/* Filters */}
         <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center">
+          <select
+            value={projectFilter}
+            onChange={(event) => router.push(event.target.value === "all" ? "/applications" : `/applications?projectId=${encodeURIComponent(event.target.value)}`)}
+            className="w-full sm:w-64 rounded-lg border border-slate-300 px-3 py-2 focus:border-[#27628a] focus:ring-[#27628a] outline-none text-sm"
+            aria-label="Filter applications by project"
+          >
+            <option value="all">All projects</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
           <input 
             type="text"
             placeholder="Search by name or authority..."
