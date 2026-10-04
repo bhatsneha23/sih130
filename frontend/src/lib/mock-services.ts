@@ -158,6 +158,230 @@ function waitForDemo<T>(value: T): Promise<T> {
   });
 }
 
+const TASK_ASSISTANT_STORAGE_KEY = "indusai-demo-task-assistant";
+
+function taskAssistantKey(projectIdValue: string): string {
+  return `${TASK_ASSISTANT_STORAGE_KEY}:${projectIdValue}`;
+}
+
+type TaskAssistantMessage = { id: string; role: "user" | "assistant"; content: string };
+
+function readTaskAssistantHistory(projectIdValue: string): TaskAssistantMessage[] {
+  return readStoredJson<TaskAssistantMessage[]>(taskAssistantKey(projectIdValue)) ?? [];
+}
+
+function writeTaskAssistantHistory(projectIdValue: string, messages: TaskAssistantMessage[]): void {
+  writeStoredJson(taskAssistantKey(projectIdValue), messages);
+}
+
+function buildTaskAssistantReply(task: RoadmapTask, prompt: string): string {
+  const lower = prompt.toLowerCase();
+  const prereq = task.prerequisites.length
+    ? `Prerequisites: ${task.prerequisites.join(", ")}.`
+    : "This task has no prerequisites.";
+  const docs = task.required_documents.length
+    ? `Required documents: ${task.required_documents.join(", ")}.`
+    : "No required documents listed.";
+  const estimate =
+    typeof task.estimated_sla_days === "number"
+      ? `Estimated maximum duration: ${task.estimated_sla_days} day(s) (illustrative).`
+      : "No duration estimate is set.";
+
+  if (lower.includes("why") || lower.includes("required")) {
+    return `${task.title} is listed because: ${task.applicability_rationale || task.description} ${estimate} This is illustrative demo guidance, not legal advice.`;
+  }
+  if (lower.includes("block") || lower.includes("depend")) {
+    return `${
+      task.status === "blocked" || task.readiness === "blocked"
+        ? task.blocked_reason || "This task is marked blocked."
+        : "This task is not currently blocked."
+    } ${prereq} Downstream: ${task.dependents.length ? task.dependents.join(", ") : "none"}.`;
+  }
+  if (lower.includes("document") || lower.includes("cannot") || lower.includes("missing")) {
+    return `${docs} If a document cannot be obtained, use Adjust roadmap to propose an alternative path, or upload evidence and note the gap for the officer. Suggestions here are illustrative only.`;
+  }
+  if (lower.includes("first") || lower.includes("next") || lower.includes("should i")) {
+    return `Current status: ${task.status}. ${prereq} ${docs} ${estimate} Prefer completing prerequisites and required uploads before marking this step complete.`;
+  }
+  return `For “${task.title}” (${task.node_type}, status ${task.status}): ${task.description} ${prereq} ${docs} ${estimate}`;
+}
+
+function proposeEditFromPrompt(
+  workspace: RoadmapWorkspace,
+  prompt: string
+): { message: string; summary: string | null; proposal: RoadmapWorkspace | null } {
+  const lower = prompt.toLowerCase();
+  const tasks = workspace.tasks.map((t) => makeRoadmapTask(t));
+  const now = new Date().toISOString();
+
+  const completeMatch = tasks.find(
+    (t) =>
+      lower.includes(t.title.toLowerCase().slice(0, 12)) &&
+      (lower.includes("complete") || lower.includes("already done") || lower.includes("finished"))
+  );
+  if (completeMatch || (lower.includes("mark") && lower.includes("complete"))) {
+    const target = completeMatch ?? tasks.find((t) => t.status !== "completed") ?? tasks[0];
+    const nextTasks = tasks.map((t) =>
+      t.id === target.id
+        ? {
+            ...t,
+            status: "completed" as const,
+            readiness: "ready" as const,
+            blocked_reason: null,
+            last_updated_at: now,
+            activity: [
+              ...t.activity,
+              {
+                id: `a-ai-${Date.now()}`,
+                actor: "Roadmap assistant",
+                message: "Marked complete via illustrative AI edit proposal.",
+                timestamp: now,
+                type: "status" as const
+              }
+            ]
+          }
+        : t
+    );
+    const proposal = computeRoadmapSummary({
+      ...workspace,
+      tasks: nextTasks,
+      graph: { ...workspace.graph, nodes: nextTasks, edges: workspace.graph.edges }
+    });
+    return {
+      message: `Proposed: mark “${target.title}” as completed. Other completed progress is preserved. Illustrative edit only.`,
+      summary: `Set status of “${target.title}” to completed.`,
+      proposal
+    };
+  }
+
+  if (lower.includes("no longer required") || lower.includes("remove") || lower.includes("not required")) {
+    const target =
+      tasks.find((t) => lower.includes(t.title.toLowerCase().slice(0, 10))) ??
+      tasks.find((t) => t.status === "blocked" || t.status === "not_started") ??
+      tasks[tasks.length - 1];
+    if (!target) {
+      return { message: "I could not identify which task to remove. Name the task explicitly.", summary: null, proposal: null };
+    }
+    const removeId = target.id;
+    const nextTasks = tasks
+      .filter((t) => t.id !== removeId)
+      .map((t) => ({
+        ...t,
+        prerequisites: t.prerequisites.filter((id) => id !== removeId),
+        dependents: t.dependents.filter((id) => id !== removeId)
+      }));
+    const nextEdges = workspace.graph.edges.filter((e) => e.source !== removeId && e.target !== removeId);
+    const proposal = computeRoadmapSummary({
+      ...workspace,
+      tasks: nextTasks,
+      graph: { ...workspace.graph, nodes: nextTasks, edges: nextEdges }
+    });
+    return {
+      message: `Proposed: remove “${target.title}” and clean related dependencies. Illustrative path change only.`,
+      summary: `Remove task “${target.title}” and update dependency edges.`,
+      proposal
+    };
+  }
+
+  if (lower.includes("add") && (lower.includes("inspection") || lower.includes("step") || lower.includes("policy"))) {
+    const newId = `${workspace.project_id}-extra-step-${Date.now()}`;
+    const newTask: RoadmapTask = makeRoadmapTask({
+      id: newId,
+      node_type: lower.includes("inspection") ? "inspection" : "approval",
+      title: lower.includes("inspection") ? "Additional site inspection" : "Additional compliance review",
+      description: "Illustrative step added from an AI roadmap edit request (demo only).",
+      status: "not_started",
+      readiness: "needs_review",
+      authority: "Illustrative authority",
+      responsible_party: "Applicant coordinator",
+      applicability_rationale: "Added from user-requested roadmap adjustment in the mock environment.",
+      source_verification_status: "illustrative",
+      source_refs: [],
+      required_documents: ["Supporting evidence.pdf"],
+      prerequisites: tasks[0] ? [tasks[0].id] : [],
+      dependents: [],
+      document_requirement_ids: [],
+      estimated_sla_days: 10,
+      due_at: null,
+      last_updated_at: now,
+      blocked_reason: null,
+      notes: [],
+      activity: [
+        {
+          id: `a-new-${Date.now()}`,
+          actor: "Roadmap assistant",
+          message: "Task proposed via Adjust roadmap.",
+          timestamp: now,
+          type: "action"
+        }
+      ],
+      permitted_status_updates: ["not_started", "pending", "in_progress", "completed"],
+      available_actions: ["mark_in_progress", "mark_complete", "add_note"]
+    });
+    const nextTasks = [...tasks, newTask];
+    if (tasks[0]) {
+      nextTasks[0] = { ...nextTasks[0], dependents: [...new Set([...nextTasks[0].dependents, newId])] };
+    }
+    const nextEdges = [
+      ...workspace.graph.edges,
+      ...(tasks[0]
+        ? [{ id: `edge-ai-${Date.now()}`, source: tasks[0].id, target: newId, edge_type: "depends_on" as const }]
+        : [])
+    ];
+    const proposal = computeRoadmapSummary({
+      ...workspace,
+      tasks: nextTasks,
+      graph: { ...workspace.graph, nodes: nextTasks, edges: nextEdges }
+    });
+    return {
+      message: `Proposed: add “${newTask.title}” (~${newTask.estimated_sla_days} days est.). Illustrative addition only.`,
+      summary: `Add task “${newTask.title}” with dependency from the first existing task.`,
+      proposal
+    };
+  }
+
+  if (lower.includes("cannot") || lower.includes("alternative") || lower.includes("document")) {
+    const target = tasks.find((t) => t.required_documents.length > 0 && t.status !== "completed") ?? tasks[0];
+    if (!target) {
+      return { message: "No document-bearing task found to adjust.", summary: null, proposal: null };
+    }
+    const nextTasks = tasks.map((t) =>
+      t.id === target.id
+        ? {
+            ...t,
+            notes: [
+              ...t.notes,
+              {
+                id: `n-ai-${Date.now()}`,
+                author: "Roadmap assistant",
+                created_at: now,
+                text: "Illustrative note: applicant reported difficulty obtaining a listed document; consider alternate evidence."
+              }
+            ],
+            last_updated_at: now
+          }
+        : t
+    );
+    const proposal = computeRoadmapSummary({
+      ...workspace,
+      tasks: nextTasks,
+      graph: { ...workspace.graph, nodes: nextTasks, edges: workspace.graph.edges }
+    });
+    return {
+      message: `Proposed: annotate “${target.title}” regarding document difficulty. Status unchanged.`,
+      summary: `Annotate “${target.title}” (no status change).`,
+      proposal
+    };
+  }
+
+  return {
+    message:
+      "I can propose: mark a task complete, remove a step, add an inspection/compliance step, or note document alternatives. Name the task when possible.",
+    summary: null,
+    proposal: null
+  };
+}
+
 function makeRoadmapTask(task: RoadmapTask): RoadmapTask {
   return {
     ...task,
@@ -623,6 +847,59 @@ export const mockRoadmapApi = {
     writeStoredRoadmap(nextWorkspace);
     return waitForDemo(nextWorkspace);
   },
+    async proposeRoadmapEdit(
+    projectId: string,
+    prompt: string
+  ): Promise<{ message: string; summary: string | null; proposal: RoadmapWorkspace | null }> {
+    const workspace = ensureRoadmapData(projectId);
+    await waitForDemo(null);
+    return proposeEditFromPrompt(workspace, prompt);
+  },
+
+  async applyRoadmapEdit(projectId: string, proposal: RoadmapWorkspace): Promise<RoadmapWorkspace> {
+    if (proposal.project_id !== projectId) {
+      throw new Error("Proposal project mismatch.");
+    }
+    const syncedTasks = syncTaskDependents(proposal.tasks.map((t) => makeRoadmapTask(t)));
+    const next = computeRoadmapSummary({
+      ...proposal,
+      tasks: syncedTasks,
+      graph: { ...proposal.graph, nodes: syncedTasks, edges: proposal.graph.edges },
+      last_updated_at: new Date().toISOString()
+    });
+    writeStoredRoadmap(next);
+    return waitForDemo(next);
+  },
+
+  async getTaskAssistantHistory(projectId: string): Promise<TaskAssistantMessage[]> {
+    return waitForDemo(readTaskAssistantHistory(projectId));
+  },
+
+  async sendTaskAssistantMessage(
+    projectId: string,
+    taskId: string,
+    prompt: string
+  ): Promise<TaskAssistantMessage[]> {
+    const workspace = ensureRoadmapData(projectId);
+    const task = workspace.tasks.find((t) => t.id === taskId);
+    if (!task) {
+      throw new Error("Task not found.");
+    }
+    const history = readTaskAssistantHistory(projectId);
+    const userMsg: TaskAssistantMessage = {
+      id: `u-${Date.now()}`,
+      role: "user",
+      content: `[${task.title}] ${prompt}`
+    };
+    const assistantMsg: TaskAssistantMessage = {
+      id: `a-${Date.now()}`,
+      role: "assistant",
+      content: buildTaskAssistantReply(task, prompt)
+    };
+    const next = [...history, userMsg, assistantMsg];
+    writeTaskAssistantHistory(projectId, next);
+    return waitForDemo(next);
+  },
 
   async getTask(projectId: string, taskId: string): Promise<RoadmapTask> {
     const workspace = ensureRoadmapData(projectId);
@@ -809,6 +1086,7 @@ export const mockRoadmapApi = {
     writeStoredRoadmap(next);
     return waitForDemo(next);
   },
+  
 
   async reset(): Promise<void> {
     if (typeof window !== "undefined") {
@@ -941,7 +1219,6 @@ const defaultDocuments: ProjectDocument[] = [
     sourceVerificationStatus: "unverified"
   }
 ];
-
 const defaultApplications: ApplicationRecord[] = [
   {
     id: "app-101",
@@ -978,6 +1255,59 @@ const defaultApplications: ApplicationRecord[] = [
       { id: "hist-3", timestamp: "2026-09-18T00:00:00Z", status: "submitted", message: "Application submitted for Water department assessment." },
       { id: "hist-4", timestamp: "2026-09-30T00:00:00Z", status: "approved", message: "Approved in the illustrative mock process." }
     ]
+  },
+  {
+    id: "app-103",
+    projectId,
+    projectName,
+    name: "Fire safety clearance application",
+    authority: "State fire services department",
+    referenceNumber: "FS-4410",
+    status: "submitted",
+    submittedAt: "2026-10-01T08:00:00Z",
+    lastUpdatedAt: "2026-10-01T08:00:00Z",
+    pendingAction: "Awaiting officer assignment",
+    relatedTaskIds: ["fire-safety-clearance"],
+    documents: ["doc-004"],
+    history: [
+      { id: "hist-5", timestamp: "2026-10-01T08:00:00Z", status: "submitted", message: "Fire safety package submitted for officer review." }
+    ]
+  },
+  {
+    id: "app-104",
+    projectId,
+    projectName,
+    name: "Effluent treatment consent",
+    authority: "Pollution control board",
+    referenceNumber: "ET-3301",
+    status: "changes_requested",
+    submittedAt: "2026-09-22T00:00:00Z",
+    lastUpdatedAt: "2026-10-02T14:00:00Z",
+    pendingAction: "Applicant must revise process balance evidence",
+    relatedTaskIds: ["effluent-treatment-review"],
+    documents: ["doc-003"],
+    history: [
+      { id: "hist-6", timestamp: "2026-09-22T00:00:00Z", status: "submitted", message: "Effluent consent application submitted." },
+      { id: "hist-7", timestamp: "2026-10-02T14:00:00Z", status: "changes_requested", message: "Officer requested updated process water balance." }
+    ]
+  },
+  {
+    id: "app-105",
+    projectId,
+    projectName,
+    name: "Site layout endorsement",
+    authority: "State industrial development authority",
+    referenceNumber: "SL-1102",
+    status: "rejected",
+    submittedAt: "2026-08-10T00:00:00Z",
+    lastUpdatedAt: "2026-08-25T00:00:00Z",
+    pendingAction: null,
+    relatedTaskIds: ["site-layout-plan"],
+    documents: ["doc-001"],
+    history: [
+      { id: "hist-8", timestamp: "2026-08-10T00:00:00Z", status: "submitted", message: "Site layout endorsement requested." },
+      { id: "hist-9", timestamp: "2026-08-25T00:00:00Z", status: "rejected", message: "Rejected: incomplete zoning setbacks on drawing." }
+    ]
   }
 ];
 
@@ -1001,14 +1331,96 @@ function createDocumentsForProject(project: MockProject): ProjectDocument[] {
 function createApplicationsForProject(project: MockProject): ApplicationRecord[] {
   const predefined: Record<string, ApplicationRecord[]> = {
     [projectId]: defaultApplications,
-    "proj-apex-textile": [
-      { id: "apex-app-factory", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Textile factory license application", authority: "Factory licensing office", referenceNumber: "AT-4102", status: "under_review", submittedAt: "2026-09-25T00:00:00Z", lastUpdatedAt: "2026-10-01T00:00:00Z", pendingAction: "Review textile layout comments", relatedTaskIds: ["proj-apex-textile-operating-license"], documents: ["apex-doc-land", "apex-doc-layout"], history: [{ id: "apex-hist-factory", timestamp: "2026-10-01T00:00:00Z", status: "under_review", message: "Textile factory license is under illustrative review." }] },
-      { id: "apex-app-pollution", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Dyeing and effluent consent application", authority: "Pollution control board", referenceNumber: "AT-4103", status: "changes_requested", submittedAt: "2026-09-22T00:00:00Z", lastUpdatedAt: "2026-09-29T00:00:00Z", pendingAction: "Update chemical process evidence", relatedTaskIds: ["proj-apex-textile-sector-approval"], documents: ["apex-doc-process"], history: [{ id: "apex-hist-pollution", timestamp: "2026-09-29T00:00:00Z", status: "changes_requested", message: "Additional textile process evidence was requested." }] },
-      { id: "apex-app-water", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Textile water connection application", authority: "Municipal utilities office", referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: "2026-09-20T00:00:00Z", pendingAction: "Attach water demand estimate", relatedTaskIds: ["proj-apex-textile-operating-license"], documents: [], history: [{ id: "apex-hist-water", timestamp: "2026-09-20T00:00:00Z", status: "draft", message: "Draft water connection request created." }] }
+        "proj-apex-textile": [
+      {
+        id: "apex-app-factory",
+        projectId: "proj-apex-textile",
+        projectName: "Apex Textile Expansion",
+        name: "Textile factory license application",
+        authority: "Factory licensing office",
+        referenceNumber: "AT-4102",
+        status: "under_review",
+        submittedAt: "2026-09-25T00:00:00Z",
+        lastUpdatedAt: "2026-10-01T00:00:00Z",
+        pendingAction: "Review textile layout comments",
+        relatedTaskIds: ["proj-apex-textile-operating-license"],
+        documents: ["apex-doc-land", "apex-doc-layout"],
+        history: [
+          { id: "apex-hist-factory", timestamp: "2026-10-01T00:00:00Z", status: "under_review", message: "Textile factory license is under illustrative review." }
+        ]
+      },
+      {
+        id: "apex-app-pollution",
+        projectId: "proj-apex-textile",
+        projectName: "Apex Textile Expansion",
+        name: "Dyeing and effluent consent application",
+        authority: "Pollution control board",
+        referenceNumber: "AT-4103",
+        status: "changes_requested",
+        submittedAt: "2026-09-22T00:00:00Z",
+        lastUpdatedAt: "2026-09-29T00:00:00Z",
+        pendingAction: "Update chemical process evidence",
+        relatedTaskIds: ["proj-apex-textile-sector-approval"],
+        documents: ["apex-doc-process"],
+        history: [
+          { id: "apex-hist-pollution", timestamp: "2026-09-29T00:00:00Z", status: "changes_requested", message: "Additional textile process evidence was requested." }
+        ]
+      },
+      {
+        id: "apex-app-water",
+        projectId: "proj-apex-textile",
+        projectName: "Apex Textile Expansion",
+        name: "Textile water connection application",
+        authority: "Municipal utilities office",
+        referenceNumber: "AT-4104",
+        status: "approved",
+        submittedAt: "2026-09-10T00:00:00Z",
+        lastUpdatedAt: "2026-09-20T00:00:00Z",
+        pendingAction: null,
+        relatedTaskIds: ["proj-apex-textile-operating-license"],
+        documents: [],
+        history: [
+          { id: "apex-hist-water", timestamp: "2026-09-10T00:00:00Z", status: "submitted", message: "Water connection request submitted." },
+          { id: "apex-hist-water-ok", timestamp: "2026-09-20T00:00:00Z", status: "approved", message: "Water connection approved." }
+        ]
+      }
     ],
     "proj-mehta-metalworks": [
-      { id: "mehta-app-environment", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", name: "Metal process environmental consent application", authority: "Pollution control board", referenceNumber: "MM-1201", status: "under_review", submittedAt: "2026-09-30T00:00:00Z", lastUpdatedAt: "2026-10-02T00:00:00Z", pendingAction: "Review emissions plan", relatedTaskIds: ["proj-mehta-metalworks-sector-approval"], documents: ["mehta-doc-emissions"], history: [{ id: "mehta-hist-environment", timestamp: "2026-10-02T00:00:00Z", status: "under_review", message: "Metal process consent is under illustrative review." }] },
-      { id: "mehta-app-fire", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", name: "Scrap processing fire safety application", authority: "State fire services", referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: "2026-10-01T00:00:00Z", pendingAction: "Attach safety layout", relatedTaskIds: ["proj-mehta-metalworks-inspection"], documents: ["mehta-doc-safety"], history: [{ id: "mehta-hist-fire", timestamp: "2026-10-01T00:00:00Z", status: "draft", message: "Draft fire safety request created." }] }
+      {
+        id: "mehta-app-environment",
+        projectId: "proj-mehta-metalworks",
+        projectName: "Mehta Metalworks",
+        name: "Metal process environmental consent application",
+        authority: "Pollution control board",
+        referenceNumber: "MM-1201",
+        status: "submitted",
+        submittedAt: "2026-09-30T00:00:00Z",
+        lastUpdatedAt: "2026-10-02T00:00:00Z",
+        pendingAction: "Review emissions plan",
+        relatedTaskIds: ["proj-mehta-metalworks-sector-approval"],
+        documents: ["mehta-doc-emissions"],
+        history: [
+          { id: "mehta-hist-environment", timestamp: "2026-10-02T00:00:00Z", status: "submitted", message: "Metal process consent submitted for review." }
+        ]
+      },
+      {
+        id: "mehta-app-fire",
+        projectId: "proj-mehta-metalworks",
+        projectName: "Mehta Metalworks",
+        name: "Scrap processing fire safety application",
+        authority: "State fire services",
+        referenceNumber: "MM-1202",
+        status: "rejected",
+        submittedAt: "2026-09-15T00:00:00Z",
+        lastUpdatedAt: "2026-09-28T00:00:00Z",
+        pendingAction: null,
+        relatedTaskIds: ["proj-mehta-metalworks-inspection"],
+        documents: ["mehta-doc-safety"],
+        history: [
+          { id: "mehta-hist-fire", timestamp: "2026-09-15T00:00:00Z", status: "submitted", message: "Fire safety request submitted." },
+          { id: "mehta-hist-fire-rej", timestamp: "2026-09-28T00:00:00Z", status: "rejected", message: "Rejected: incomplete emergency access layout." }
+        ]
+      }
     ]
   };
   return predefined[project.id] ?? [];

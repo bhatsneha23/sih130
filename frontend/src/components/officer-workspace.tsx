@@ -15,6 +15,19 @@ type SlaState = "within" | "approaching" | "overdue";
 const statusTone: Record<ApplicationStatus, "positive" | "warning" | "neutral" | "info"> = {
   draft: "neutral", ready: "info", submitted: "info", under_review: "warning", changes_requested: "warning", approved: "positive", rejected: "warning", cancelled: "neutral"
 };
+const QUEUE_STATUSES: ApplicationStatus[] = ["ready", "submitted", "under_review", "changes_requested"];
+const HISTORY_STATUSES: ApplicationStatus[] = ["draft", "approved", "rejected", "cancelled"];
+
+function formatApplicationDate(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
 
 function statusLabel(status: string) {
   return status.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
@@ -72,23 +85,40 @@ export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
   useEffect(() => { void load(); }, []);
 
   const departments = useMemo(() => ["all", ...new Set(applications.map((application) => application.authority))], [applications]);
-  const filteredApplications = useMemo(() => applications
-    .filter((application) => {
-      const query = `${application.id} ${application.referenceNumber ?? ""} ${application.name} ${application.projectName} ${application.authority}`.toLowerCase();
-      const matchesSearch = query.includes(search.toLowerCase());
-      const matchesStatus = statusFilter === "all" || application.status === statusFilter;
-      const matchesDepartment = departmentFilter === "all" || application.authority === departmentFilter;
-      const matchesSla = slaFilter === "all" || slaState(application) === slaFilter;
-      return matchesSearch && matchesStatus && matchesDepartment && matchesSla;
-    })
-    .sort((left, right) => sortBy === "recent" ? new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime() : slaState(left).localeCompare(slaState(right))),
-    [applications, search, statusFilter, departmentFilter, slaFilter, sortBy]
+    const scopedApplications = useMemo(() => {
+    if (mode === "queue") {
+      return applications.filter((application) => QUEUE_STATUSES.includes(application.status));
+    }
+    if (mode === "applications") {
+      return applications.filter((application) => HISTORY_STATUSES.includes(application.status));
+    }
+    return applications;
+  }, [applications, mode]);
+
+  const filteredApplications = useMemo(
+    () =>
+      scopedApplications
+        .filter((application) => {
+          const query = `${application.id} ${application.referenceNumber ?? ""} ${application.name} ${application.projectName} ${application.authority}`.toLowerCase();
+          const matchesSearch = query.includes(search.toLowerCase());
+          const matchesStatus = statusFilter === "all" || application.status === statusFilter;
+          const matchesDepartment = departmentFilter === "all" || application.authority === departmentFilter;
+          const matchesSla = slaFilter === "all" || slaState(application) === slaFilter;
+          return matchesSearch && matchesStatus && matchesDepartment && matchesSla;
+        })
+        .sort((left, right) =>
+          sortBy === "recent"
+            ? new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime()
+            : slaState(left).localeCompare(slaState(right))
+        ),
+    [scopedApplications, search, statusFilter, departmentFilter, slaFilter, sortBy]
   );
   const selectedApplication = applications.find((application) => application.id === selectedApplicationId) ?? null;
   const selectedDocuments = selectedApplication ? documents.filter((document) => selectedApplication.documents.includes(document.id)) : [];
   const pendingDocuments = documents.filter((document) => document.verificationStatus === "pending" || document.verificationStatus === "needs_review");
-  const attentionApplications = applications.filter((application) => ["under_review", "submitted", "changes_requested"].includes(application.status) || slaState(application) !== "within");
-
+  const attentionApplications = applications.filter(
+    (application) => QUEUE_STATUSES.includes(application.status) || slaState(application) !== "within"
+  );
   async function handleApplicationAction(status: ApplicationStatus, message: string) {
     if (!selectedApplication) return;
     if (status === "approved" && !window.confirm("Approve this illustrative application?")) return;
@@ -99,7 +129,11 @@ export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
     }
     const next = await updateApplicationStatus(selectedApplication.projectId, selectedApplication.id, status, message);
     setApplications((current) => current.map((application) => next.find((item) => item.id === application.id) ?? application));
-    setNotice(`Application ${statusLabel(status).toLowerCase()} and timeline updated.`);
+    if (mode === "queue" && (status === "approved" || status === "rejected" || status === "cancelled")) {
+      setStatusFilter("all");
+      setSelectedApplicationId(null);
+    }
+    setNotice(`Application ${statusLabel(status).toLowerCase()} and timeline updated.`);    setNotice(`Application ${statusLabel(status).toLowerCase()} and timeline updated.`);
   }
 
   async function handleDocumentAction(document: ProjectDocument, status: DocumentStatus) {
@@ -119,9 +153,23 @@ export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
   if (loading) return <AppShell forcedRole="Officer"><Panel><div className="animate-pulse py-12 text-center text-sm text-slate-500">Loading officer workspace…</div></Panel></AppShell>;
   if (error) return <AppShell forcedRole="Officer"><EmptyState title="Officer workspace unavailable" description={error} action={<Button onClick={() => void load()}>Retry</Button>} /></AppShell>;
 
-  const title = mode === "dashboard" ? "Officer dashboard" : mode === "queue" ? "Review queue" : mode === "applications" ? "Applications" : "Document review";
-  const description = mode === "dashboard" ? "Review workload, deadlines, and application activity requiring officer attention." : mode === "queue" ? "Prioritize assigned applications by status, department, and SLA state." : mode === "applications" ? "Inspect application records and open the detailed review workspace." : "Review applicant-submitted documents linked to applications and projects.";
-
+    const title =
+    mode === "dashboard"
+      ? "Officer dashboard"
+      : mode === "queue"
+        ? "Review queue"
+        : mode === "applications"
+          ? "Application history"
+          : "Document review";
+  const description =
+    mode === "dashboard"
+      ? "Review workload, deadlines, and application activity requiring officer attention."
+      : mode === "queue"
+        ? "Applications awaiting officer review. Approved and rejected records are not listed here."
+        : mode === "applications"
+          ? "History of reviewed and closed applications, including approved, rejected, and draft records."
+          : "Review applicant-submitted documents linked to applications and projects.";
+  
   return <AppShell forcedRole="Officer">
     <div className="space-y-6">
       <PageHeader eyebrow="Government Officer" title={title} description={description} actions={<StatusBadge tone="info">Illustrative officer workspace</StatusBadge>} />
@@ -137,16 +185,115 @@ export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
         </div>
       </>}
 
-      {(mode === "queue" || mode === "applications") && <Panel title={mode === "queue" ? "Applications requiring review" : "Application records"}>
-        <div className="mb-4 grid gap-3 md:grid-cols-[1.5fr,1fr,1fr,1fr,1fr]">
-          <input aria-label="Search officer applications" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ID, applicant, project, approval" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" />
-          <select aria-label="Filter application status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="all">All statuses</option>{["draft", "submitted", "under_review", "changes_requested", "approved", "rejected"].map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select>
-          <select aria-label="Filter department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">{departments.map((department) => <option key={department} value={department}>{department === "all" ? "All departments" : department}</option>)}</select>
-          <select aria-label="Filter SLA" value={slaFilter} onChange={(event) => setSlaFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="all">All SLA states</option><option value="within">Within SLA</option><option value="approaching">Approaching SLA</option><option value="overdue">Overdue</option></select>
-          <select aria-label="Sort applications" value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="sla">Sort by SLA</option><option value="recent">Sort by recent activity</option></select>
-        </div>
-        {filteredApplications.length === 0 ? <EmptyState title="No matching applications" description="Adjust the queue filters to find another application." /> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-slate-200 text-xs uppercase tracking-[0.1em] text-slate-500"><tr>{["Application", "Applicant", "Project", "Approval", "Department", "Status", "SLA", "Action"].map((heading) => <th key={heading} className="px-3 py-3">{heading}</th>)}</tr></thead><tbody>{filteredApplications.map((application) => <tr key={application.id} className="border-b border-slate-100"><td className="px-3 py-3 font-medium">{application.referenceNumber ?? application.id}</td><td className="px-3 py-3">{projects.find((project) => project.id === application.projectId)?.organization ?? "Applicant"}</td><td className="px-3 py-3">{application.projectName}</td><td className="px-3 py-3">{application.name}</td><td className="px-3 py-3">{application.authority}</td><td className="px-3 py-3"><StatusBadge tone={statusTone[application.status]}>{statusLabel(application.status)}</StatusBadge></td><td className="px-3 py-3"><StatusBadge tone={slaTone(slaState(application))}>{slaLabel(slaState(application))}</StatusBadge></td><td className="px-3 py-3"><Button variant="secondary" onClick={() => openApplication(application.id)}>Open</Button></td></tr>)}</tbody></table></div>}
-      </Panel>}
+            {(mode === "queue" || mode === "applications") && (
+        <Panel title={mode === "queue" ? "Applications requiring review" : "Application history"}>
+          <div className="mb-4 grid gap-3 md:grid-cols-[1.5fr,1fr,1fr,1fr,1fr]">
+            <input
+              aria-label="Search officer applications"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search ID, applicant, project, approval"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            />
+            <select
+              aria-label="Filter application status"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            >
+              <option value="all">All statuses</option>
+              {(mode === "queue" ? QUEUE_STATUSES : HISTORY_STATUSES).map((status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status)}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter department"
+              value={departmentFilter}
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            >
+              {departments.map((department) => (
+                <option key={department} value={department}>
+                  {department === "all" ? "All departments" : department}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter SLA"
+              value={slaFilter}
+              onChange={(event) => setSlaFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            >
+              <option value="all">All SLA states</option>
+              <option value="within">Within SLA</option>
+              <option value="approaching">Approaching SLA</option>
+              <option value="overdue">Overdue</option>
+            </select>
+            <select
+              aria-label="Sort applications"
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            >
+              <option value="sla">Sort by SLA</option>
+              <option value="recent">Sort by recent activity</option>
+            </select>
+          </div>
+          {filteredApplications.length === 0 ? (
+            <EmptyState
+              title={mode === "queue" ? "No applications awaiting review" : "No application history found"}
+              description={
+                mode === "queue"
+                  ? "There are no submitted or in-review applications matching the current filters."
+                  : "No approved, rejected, or draft applications match the current filters."
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-slate-200 text-xs uppercase tracking-[0.1em] text-slate-500">
+                  <tr>
+                    {["Application", "Applicant", "Project", "Approval", "Department", "Status", "Date", "SLA", "Action"].map(
+                      (heading) => (
+                        <th key={heading} className="px-3 py-3">
+                          {heading}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredApplications.map((application) => (
+                    <tr key={application.id} className="border-b border-slate-100">
+                      <td className="px-3 py-3 font-medium">{application.referenceNumber ?? application.id}</td>
+                      <td className="px-3 py-3">
+                        {projects.find((project) => project.id === application.projectId)?.organization ?? "Applicant"}
+                      </td>
+                      <td className="px-3 py-3">{application.projectName}</td>
+                      <td className="px-3 py-3">{application.name}</td>
+                      <td className="px-3 py-3">{application.authority}</td>
+                      <td className="px-3 py-3">
+                        <StatusBadge tone={statusTone[application.status]}>{statusLabel(application.status)}</StatusBadge>
+                      </td>
+                      <td className="px-3 py-3">{formatApplicationDate(application.submittedAt ?? application.lastUpdatedAt)}</td>
+                      <td className="px-3 py-3">
+                        <StatusBadge tone={slaTone(slaState(application))}>{slaLabel(slaState(application))}</StatusBadge>
+                      </td>
+                      <td className="px-3 py-3">
+                        <Button variant="secondary" onClick={() => openApplication(application.id)}>
+                          Open
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      )}
 
       {mode === "documents" && <Panel title="Submitted documents requiring review"><div className="space-y-3">{documents.length === 0 ? <EmptyState title="No submitted documents" description="No documents are currently available for officer review." /> : documents.map((document) => { const application = applications.find((item) => item.documents.includes(document.id)); return <div key={document.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-medium text-[#172b3a]">{document.name}</p><p className="text-sm text-slate-600">{application?.referenceNumber ?? "Unlinked application"} · {document.projectName}</p><p className="text-xs text-slate-500">Submitted {new Date(document.uploadedAt).toLocaleDateString()} · {document.category}</p></div><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={document.verificationStatus === "verified" ? "positive" : "warning"}>{document.verificationStatus === "verified" ? "Verified" : document.verificationStatus === "needs_review" ? "Correction required" : "Pending verification"}</StatusBadge><Button variant="secondary" onClick={() => void handleDocumentAction(document, "verified")}>Verify Document</Button><Button variant="secondary" onClick={() => void handleDocumentAction(document, "needs_review")}>Request Correction</Button></div></div>})}</div></Panel>}
 

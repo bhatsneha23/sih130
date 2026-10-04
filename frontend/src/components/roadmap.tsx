@@ -76,15 +76,9 @@ function getStatusTone(value: ApprovalTaskStatus) {
 }
 
 function formatDate(value?: string | null): string {
-  if (!value) {
-    return "—";
-  }
-
+  if (!value) return "—";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
+  if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
     month: "short",
@@ -92,9 +86,22 @@ function formatDate(value?: string | null): string {
   }).format(date);
 }
 
+function formatEstimateDays(days?: number | null): string {
+  if (days == null || Number.isNaN(days)) return "—";
+  return `${days} day${days === 1 ? "" : "s"} (est.)`;
+}
+
+function formatRemainingEstimate(totalDays: number): string {
+  if (!totalDays || totalDays <= 0) return "0 days";
+  if (totalDays < 7) return `${totalDays} day${totalDays === 1 ? "" : "s"}`;
+  const weeks = Math.floor(totalDays / 7);
+  const days = totalDays % 7;
+  if (days === 0) return `${weeks} wk${weeks === 1 ? "" : "s"}`;
+  return `${weeks} wk ${days}d`;
+}
+
 function sortTasks(tasks: RoadmapTask[], sortBy: string) {
   const sorted = [...tasks];
-
   sorted.sort((a, b) => {
     switch (sortBy) {
       case "title":
@@ -113,43 +120,19 @@ function sortTasks(tasks: RoadmapTask[], sortBy: string) {
         return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
     }
   });
-
   return sorted;
 }
 
 function getNodeVisual(status: ApprovalTaskStatus, readiness?: RoadmapTask["readiness"]) {
-  // Blocked only when the task is explicitly blocked by status or readiness.
-  // Having prerequisites alone does not make a node blocked.
-  const isBlocked =
-    status === "blocked" || readiness === "blocked";
-
+  const isBlocked = status === "blocked" || readiness === "blocked";
   if (isBlocked) {
-    return {
-      fill: "#e2e8f0",
-      text: "#475569",
-      border: "#94a3b8",
-      muted: true,
-      label: "Blocked"
-    };
+    return { fill: "#e2e8f0", text: "#475569", border: "#94a3b8", muted: true, label: "Blocked" };
   }
-
   switch (status) {
     case "completed":
-      return {
-        fill: "#10b981",
-        text: "#ffffff",
-        border: "#059669",
-        muted: false,
-        label: "Completed"
-      };
+      return { fill: "#10b981", text: "#ffffff", border: "#059669", muted: false, label: "Completed" };
     case "in_progress":
-      return {
-        fill: "#f97316",
-        text: "#ffffff",
-        border: "#ea580c",
-        muted: false,
-        label: "In progress"
-      };
+      return { fill: "#f97316", text: "#ffffff", border: "#ea580c", muted: false, label: "In progress" };
     case "not_started":
     case "pending":
       return {
@@ -169,31 +152,12 @@ function getNodeVisual(status: ApprovalTaskStatus, readiness?: RoadmapTask["read
         label: status === "submitted" ? "Submitted" : "Under review"
       };
     case "changes_requested":
-      return {
-        fill: "#f59e0b",
-        text: "#ffffff",
-        border: "#d97706",
-        muted: false,
-        label: "Changes requested"
-      };
+      return { fill: "#f59e0b", text: "#ffffff", border: "#d97706", muted: false, label: "Changes requested" };
     case "rejected":
-      return {
-        fill: "#ef4444",
-        text: "#ffffff",
-        border: "#dc2626",
-        muted: false,
-        label: "Rejected"
-      };
+      return { fill: "#ef4444", text: "#ffffff", border: "#dc2626", muted: false, label: "Rejected" };
     case "cancelled":
-      return {
-        fill: "#64748b",
-        text: "#ffffff",
-        border: "#475569",
-        muted: false,
-        label: "Cancelled"
-      };
+      return { fill: "#64748b", text: "#ffffff", border: "#475569", muted: false, label: "Cancelled" };
     default: {
-      // Fallback for any future status values
       const meta = statusMeta[status as ApprovalTaskStatus];
       return {
         fill: "#64748b",
@@ -232,8 +196,6 @@ function NodeShape({
   const visual = getNodeVisual(status, readiness);
   const border = selected ? "#0f172a" : visual.border;
   const strokeWidth = selected ? 3.5 : 1.75;
-
-  // Split long titles into up to 2 lines for readability
   const words = text.split(" ");
   let line1 = text;
   let line2 = "";
@@ -286,8 +248,6 @@ function NodeShape({
           strokeWidth={strokeWidth}
         />
       )}
-
-      {/* Title – multiline when needed */}
       <text
         x={x + width / 2}
         y={line2 ? y + height / 2 - 10 : y + height / 2 - 4}
@@ -312,8 +272,6 @@ function NodeShape({
           {line2.length > 22 ? `${line2.slice(0, 20)}…` : line2}
         </text>
       ) : null}
-
-      {/* Status label under title */}
       <text
         x={x + width / 2}
         y={line2 ? y + height / 2 + 26 : y + height / 2 + 16}
@@ -343,14 +301,13 @@ function DependencyGraph({
   const [isDragging, setIsDragging] = useState(false);
   const dragState = useRef<{ x: number; y: number } | null>(null);
 
-    const layout = useMemo(() => {
+  const layout = useMemo(() => {
     if (!workspace || workspace.graph.nodes.length === 0) {
       return { nodes: [], edges: [], width: 900, height: 560 };
     }
 
     const layerMap = new Map<string, number>();
     const queue: string[] = [];
-
     workspace.graph.nodes.forEach((node) => {
       const incoming = workspace.graph.edges.filter((edge) => edge.target === node.id).length;
       if (incoming === 0) {
@@ -384,13 +341,10 @@ function DependencyGraph({
 
     const maxLayer = Math.max(...[...layerGroups.keys()], 0);
     const maxItemsInLayer = Math.max(...[...layerGroups.values()].map((items) => items.length), 1);
-
-    // Increased spacing for larger, more readable nodes
     const nodeWidth = 200;
     const nodeHeight = 96;
     const layerGap = 260;
     const rowGap = 140;
-
     const graphWidth = Math.max(900, (maxLayer + 1) * layerGap + 80);
     const totalHeight = Math.max(560, maxItemsInLayer * rowGap + 120);
 
@@ -400,13 +354,7 @@ function DependencyGraph({
       const index = itemsInLayer.indexOf(node.id);
       const x = 40 + layer * layerGap + (layer % 2) * 24;
       const y = 48 + index * rowGap + (index % 2 ? 16 : 0);
-      return {
-        ...node,
-        layoutX: x,
-        layoutY: y,
-        width: nodeWidth,
-        height: nodeHeight
-      };
+      return { ...node, layoutX: x, layoutY: y, width: nodeWidth, height: nodeHeight };
     });
 
     const edgeData = workspace.graph.edges.map((edge) => {
@@ -430,12 +378,9 @@ function DependencyGraph({
       setPan({ x: 0, y: 0 });
       return;
     }
-
     const contentWidth = layout.width ?? 900;
     const contentHeight = layout.height ?? 560;
-    const svgWidth = 900;
-    const svgHeight = 560;
-    const nextZoom = Math.min(svgWidth / (contentWidth + 80), svgHeight / (contentHeight + 60), 1.1);
+    const nextZoom = Math.min(900 / (contentWidth + 80), 560 / (contentHeight + 60), 1.1);
     setZoom(nextZoom);
     setPan({ x: 18, y: 10 });
   }, [layout, workspace]);
@@ -465,10 +410,10 @@ function DependencyGraph({
           <span className="rounded-full bg-slate-100 px-2 py-1">{workspace.graph.edges.length} dependencies</span>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" type="button" onClick={() => setZoom((current) => Math.max(0.6, Number((current * 0.85).toFixed(2))))}>
+          <Button variant="secondary" type="button" onClick={() => setZoom((c) => Math.max(0.6, Number((c * 0.85).toFixed(2))))}>
             −
           </Button>
-          <Button variant="secondary" type="button" onClick={() => setZoom((current) => Math.min(1.8, Number((current * 1.15).toFixed(2))))}>
+          <Button variant="secondary" type="button" onClick={() => setZoom((c) => Math.min(1.8, Number((c * 1.15).toFixed(2))))}>
             +
           </Button>
           <Button variant="secondary" type="button" onClick={fitGraph}>
@@ -485,7 +430,7 @@ function DependencyGraph({
           onWheel={(event) => {
             event.preventDefault();
             const delta = event.deltaY > 0 ? 0.9 : 1.1;
-            setZoom((current) => Math.min(1.8, Math.max(0.5, Number((current * delta).toFixed(2)))));
+            setZoom((c) => Math.min(1.8, Math.max(0.5, Number((c * delta).toFixed(2)))));
           }}
           onPointerDown={(event) => {
             dragState.current = { x: event.clientX, y: event.clientY };
@@ -496,7 +441,7 @@ function DependencyGraph({
             const dx = event.clientX - dragState.current.x;
             const dy = event.clientY - dragState.current.y;
             dragState.current = { x: event.clientX, y: event.clientY };
-            setPan((current) => ({ x: current.x + dx / zoom, y: current.y + dy / zoom }));
+            setPan((c) => ({ x: c.x + dx / zoom, y: c.y + dy / zoom }));
           }}
           onPointerUp={() => {
             dragState.current = null;
@@ -508,7 +453,7 @@ function DependencyGraph({
           }}
         >
           <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-                        {layout.edges.map((edge) => (
+            {layout.edges.map((edge) => (
               <path
                 key={edge.id}
                 d={`M ${edge.sourceX} ${edge.sourceY} C ${edge.sourceX + 90},${edge.sourceY} ${edge.targetX - 90},${edge.targetY} ${edge.targetX},${edge.targetY}`}
@@ -543,10 +488,8 @@ function DependencyGraph({
         </svg>
       </div>
 
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-          Node background colors
-        </p>
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Node background colors</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="flex items-center gap-2.5 text-sm text-slate-700">
             <span className="inline-block h-4 w-4 rounded-md bg-emerald-500 shadow-sm" />
@@ -582,7 +525,7 @@ function DependencyGraph({
           </div>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          Node shape still indicates type (rectangle = approval / action, circle = document, diamond = inspection). Selected nodes have a stronger dark border.
+          Node shape indicates type (rectangle = approval / action, circle = document, diamond = inspection). Selected nodes have a stronger dark border.
         </p>
       </div>
     </div>
@@ -610,30 +553,31 @@ function TaskRow({
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span
-              className="inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
-              style={{ backgroundColor: typeMeta[task.node_type].color }}
-            >
-              {typeMeta[task.node_type].label}
-            </span>
             <h3 className="truncate text-base font-semibold text-[#172b3a]">{task.title}</h3>
+            <StatusBadge tone={getStatusTone(task.status)}>{statusMeta[task.status].label}</StatusBadge>
+            {task.readiness ? (
+              <StatusBadge tone={readinessMeta[task.readiness].tone}>{readinessMeta[task.readiness].label}</StatusBadge>
+            ) : null}
           </div>
-          <p className="mt-2 text-sm text-slate-600">{task.description}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-slate-600">{task.description}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone={getStatusTone(task.status)}>{statusMeta[task.status].label}</StatusBadge>
-          {task.readiness ? (
-            <StatusBadge tone={readinessMeta[task.readiness].tone}>
-              {readinessMeta[task.readiness].label}
-            </StatusBadge>
-          ) : null}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-600">
+            {typeMeta[task.node_type].label}
+          </span>
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
+            {formatEstimateDays(task.estimated_sla_days)}
+          </span>
         </div>
       </div>
-
-      <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-4">
+      <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-5">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Due</p>
           <p className="mt-1 font-medium text-slate-800">{formatDate(task.due_at)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Est. duration</p>
+          <p className="mt-1 font-medium text-slate-800">{formatEstimateDays(task.estimated_sla_days)}</p>
         </div>
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Owner</p>
@@ -668,7 +612,7 @@ function RoadmapListView({
   setGroupBy,
   clearFilters
 }: {
-  workspace: RoadmapWorkspace | null;
+  workspace: RoadmapWorkspace;
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   search: string;
@@ -683,135 +627,106 @@ function RoadmapListView({
   setGroupBy: (value: "none" | "status" | "type") => void;
   clearFilters: () => void;
 }) {
-  const tasks = useMemo(() => {
-    if (!workspace) return [];
-
-    const filtered = workspace.tasks.filter((task) => {
-      const matchesSearch = task.title.toLowerCase().includes(search.toLowerCase());
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const next = workspace.tasks.filter((task) => {
+      const matchesSearch =
+        !query ||
+        task.title.toLowerCase().includes(query) ||
+        task.description.toLowerCase().includes(query) ||
+        (task.authority ?? "").toLowerCase().includes(query);
       const matchesStatus = statusFilter === "all" || task.status === statusFilter;
       const matchesType = typeFilter === "all" || task.node_type === typeFilter;
       return matchesSearch && matchesStatus && matchesType;
     });
+    return sortTasks(next, sortBy);
+  }, [workspace.tasks, search, statusFilter, typeFilter, sortBy]);
 
-    return sortTasks(filtered, sortBy);
-  }, [workspace, search, statusFilter, typeFilter, sortBy]);
-
-  const groupedTasks = useMemo(() => {
-    if (groupBy === "none") {
-      return { All: tasks };
-    }
-
-    const collection = new Map<string, RoadmapTask[]>();
-    tasks.forEach((task) => {
-      const key = groupBy === "status" ? statusMeta[task.status].label : typeMeta[task.node_type].label;
-      const current = collection.get(key) ?? [];
-      current.push(task);
-      collection.set(key, current);
+  const grouped = useMemo(() => {
+    if (groupBy === "none") return [{ key: "all", label: "All tasks", tasks: filtered }];
+    const map = new Map<string, RoadmapTask[]>();
+    filtered.forEach((task) => {
+      const key = groupBy === "status" ? task.status : task.node_type;
+      const list = map.get(key) ?? [];
+      list.push(task);
+      map.set(key, list);
     });
-
-    return Object.fromEntries(collection.entries());
-  }, [tasks, groupBy]);
-
-  if (!workspace) {
-    return <div className="text-sm text-slate-500">Loading roadmap…</div>;
-  }
+    return [...map.entries()].map(([key, tasks]) => ({
+      key,
+      label: groupBy === "status" ? statusMeta[key as ApprovalTaskStatus]?.label ?? key : typeMeta[key as RoadmapNodeType]?.label ?? key,
+      tasks
+    }));
+  }, [filtered, groupBy]);
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-[1.5fr,1fr,1fr,1fr,1.2fr]">
+      <Panel title="Task filters">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <input
-            aria-label="Search approval tasks"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search task name"
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none ring-0 focus:border-[#27628a]"
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search tasks, authorities, descriptions"
+            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
           />
           <select
-            aria-label="Filter by status"
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as "all" | ApprovalTaskStatus)}
+            onChange={(e) => setStatusFilter(e.target.value as "all" | ApprovalTaskStatus)}
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
           >
             <option value="all">All statuses</option>
-            {Object.entries(statusMeta).map(([status]) => (
-              <option key={status} value={status}>
-                {statusMeta[status as ApprovalTaskStatus].label}
+            {Object.entries(statusMeta).map(([key, meta]) => (
+              <option key={key} value={key}>
+                {meta.label}
               </option>
             ))}
           </select>
           <select
-            aria-label="Filter by type"
             value={typeFilter}
-            onChange={(event) => setTypeFilter(event.target.value as "all" | RoadmapNodeType)}
+            onChange={(e) => setTypeFilter(e.target.value as "all" | RoadmapNodeType)}
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
           >
             <option value="all">All types</option>
-            {Object.entries(typeMeta).map(([type, details]) => (
-              <option key={type} value={type}>
-                {details.label}
+            {Object.entries(typeMeta).map(([key, meta]) => (
+              <option key={key} value={key}>
+                {meta.label}
               </option>
             ))}
           </select>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <option value="due_date">Sort by due date</option>
+            <option value="status">Sort by status</option>
+            <option value="type">Sort by type</option>
+            <option value="title">Sort by title</option>
+            <option value="last_updated">Sort by last updated</option>
+          </select>
           <select
-            aria-label="Sort tasks"
-            value={sortBy}
-            onChange={(event) => setSortBy(event.target.value)}
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value as "none" | "status" | "type")}
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
           >
-            <option value="due_date">Due date</option>
-            <option value="title">Title</option>
-            <option value="status">Status</option>
-            <option value="type">Type</option>
-            <option value="last_updated">Last updated</option>
+            <option value="status">Group by status</option>
+            <option value="type">Group by type</option>
+            <option value="none">No grouping</option>
           </select>
-          <div className="flex items-center gap-2">
-            <select
-              aria-label="Group tasks"
-              value={groupBy}
-              onChange={(event) => setGroupBy(event.target.value as "none" | "status" | "type")}
-              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
-            >
-              <option value="none">No grouping</option>
-              <option value="status">Group by status</option>
-              <option value="type">Group by type</option>
-            </select>
-            <Button variant="secondary" type="button" onClick={clearFilters}>
-              Clear
-            </Button>
-          </div>
         </div>
-      </div>
+        <div className="mt-3 flex justify-end">
+          <Button variant="secondary" type="button" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        </div>
+      </Panel>
 
-      {tasks.length === 0 ? (
-        <EmptyState
-          title="No tasks match your filters"
-          description="Adjust your search or clear the current filters to see the full roadmap."
-          action={<Button variant="secondary" onClick={clearFilters}>Clear filters</Button>}
-        />
+      {filtered.length === 0 ? (
+        <EmptyState title="No matching tasks" description="Adjust filters to see more of the illustrative roadmap." />
       ) : (
-        <div className="space-y-4">
-          {Object.entries(groupedTasks).map(([groupName, groupItems]) => (
-            <div key={groupName} className="space-y-3">
-              {groupBy !== "none" ? (
-                <div className="flex items-center gap-2 px-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{groupName}</span>
-                  <span className="text-xs text-slate-400">({groupItems.length})</span>
-                </div>
-              ) : null}
-              <div className="space-y-3">
-                {groupItems.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    isSelected={selectedTaskId === task.id}
-                    onSelect={() => onSelectTask(task.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+        grouped.map((group) => (
+          <div key={group.key} className="space-y-3">
+            {groupBy !== "none" ? <h3 className="text-sm font-semibold text-slate-700">{group.label}</h3> : null}
+            {group.tasks.map((task) => (
+              <TaskRow key={task.id} task={task} isSelected={selectedTaskId === task.id} onSelect={() => onSelectTask(task.id)} />
+            ))}
+          </div>
+        ))
       )}
     </div>
   );
@@ -821,6 +736,7 @@ function TaskDetailDrawer({
   task,
   projectName,
   workspace,
+  projectId,
   onClose,
   onTaskSelection,
   onUpdateTaskStatus,
@@ -832,6 +748,7 @@ function TaskDetailDrawer({
   task: RoadmapTask | null;
   projectName: string;
   workspace: RoadmapWorkspace | null;
+  projectId: string;
   onClose: () => void;
   onTaskSelection: (taskId: string) => void;
   onUpdateTaskStatus: (nextStatus: ApprovalTaskStatus) => Promise<void>;
@@ -840,19 +757,43 @@ function TaskDetailDrawer({
   setNoteDraft: (value: string) => void;
   isSaving: boolean;
 }) {
-  if (!task || !workspace) {
-    return null;
-  }
+  const [taskChat, setTaskChat] = useState<{ id: string; role: "user" | "assistant"; content: string }[]>([]);
+  const [taskChatInput, setTaskChatInput] = useState("");
+  const [taskChatLoading, setTaskChatLoading] = useState(false);
 
-  const prerequisites = task.prerequisites
-    .map((id) => workspace.tasks.find((entry) => entry.id === id))
-    .filter(Boolean) as RoadmapTask[];
-  const dependents = task.dependents
-    .map((id) => workspace.tasks.find((entry) => entry.id === id))
-    .filter(Boolean) as RoadmapTask[];
+  useEffect(() => {
+    if (!task || !projectId) return;
+    let cancelled = false;
+    void mockRoadmapApi.getTaskAssistantHistory(projectId).then((history) => {
+      if (!cancelled) setTaskChat(history);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, task?.id]);
+
+  if (!task || !workspace) return null;
+
+  const prerequisites = workspace.tasks.filter((item) => task.prerequisites.includes(item.id));
+  const dependents = workspace.tasks.filter((item) => task.dependents.includes(item.id));
+
+  const sendTaskChat = async () => {
+    const prompt = taskChatInput.trim();
+    if (!prompt || taskChatLoading) return;
+    setTaskChatLoading(true);
+    setTaskChatInput("");
+    try {
+      const next = await mockRoadmapApi.sendTaskAssistantMessage(projectId, task.id, prompt);
+      setTaskChat(next);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTaskChatLoading(false);
+    }
+  };
 
   return (
-    <aside className="fixed right-0 top-0 z-50 h-full w-full max-w-xl overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+    <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-xl overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -894,6 +835,10 @@ function TaskDetailDrawer({
               <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Due date</dt>
               <dd className="mt-1 font-medium text-[#172b3a]">{formatDate(task.due_at)}</dd>
             </div>
+            <div>
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Est. duration (max)</dt>
+              <dd className="mt-1 font-medium text-[#172b3a]">{formatEstimateDays(task.estimated_sla_days)}</dd>
+            </div>
           </dl>
           <p className="mt-4 text-sm leading-6 text-slate-700">{task.description}</p>
         </Panel>
@@ -912,39 +857,6 @@ function TaskDetailDrawer({
             ) : null}
           </Panel>
         ) : null}
-
-        <Panel title="Readiness and source references">
-          <div className="space-y-3">
-            {task.readiness ? (
-              <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-                <span className="text-sm font-medium text-slate-700">Readiness</span>
-                <StatusBadge tone={readinessMeta[task.readiness].tone}>{readinessMeta[task.readiness].label}</StatusBadge>
-              </div>
-            ) : null}
-            {task.applicability_rationale ? (
-              <p className="text-sm text-slate-700">{task.applicability_rationale}</p>
-            ) : null}
-            {task.source_refs.length > 0 ? (
-              <ul className="space-y-2 text-sm text-slate-700">
-                {task.source_refs.map((reference) => (
-                  <li key={reference.source_id} className="rounded-xl border border-slate-200 p-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">{reference.label}</span>
-                      <StatusBadge tone={reference.verification_status === "verified" ? "positive" : reference.verification_status === "illustrative" ? "info" : "warning"}>
-                        {verificationMeta[reference.verification_status]}
-                      </StatusBadge>
-                    </div>
-                    {reference.url ? (
-                      <a href={reference.url} className="mt-2 inline-block text-xs text-[#27628a] underline" target="_blank" rel="noreferrer">
-                        View reference
-                      </a>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        </Panel>
 
         <Panel title="Dependencies">
           <div className="grid gap-3 md:grid-cols-2">
@@ -997,7 +909,6 @@ function TaskDetailDrawer({
                 </ul>
               </div>
             ) : null}
-
             {task.activity.length > 0 ? (
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Recent activity</p>
@@ -1016,6 +927,48 @@ function TaskDetailDrawer({
           </div>
         </Panel>
 
+        <Panel title="Task assistant">
+          <p className="mb-2 text-xs text-slate-500">
+            Context: <span className="font-medium text-slate-700">{task.title}</span> · Project-scoped (illustrative mock)
+          </p>
+          <div className="mb-3 max-h-48 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-3">
+            {taskChat.length === 0 ? (
+              <p className="text-sm text-slate-500">Ask why this step is needed, what blocks it, or what to do if a document is missing.</p>
+            ) : (
+              taskChat.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={[
+                    "max-w-[95%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm",
+                    msg.role === "assistant" ? "bg-white text-slate-700 ring-1 ring-slate-200" : "ml-auto bg-[#27628a] text-white"
+                  ].join(" ")}
+                >
+                  {msg.content}
+                </div>
+              ))
+            )}
+            {taskChatLoading ? <p className="text-xs text-slate-500">Responding…</p> : null}
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={taskChatInput}
+              onChange={(e) => setTaskChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void sendTaskChat();
+                }
+              }}
+              placeholder="Ask about this task…"
+              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              disabled={taskChatLoading}
+            />
+            <Button type="button" variant="secondary" disabled={taskChatLoading || !taskChatInput.trim()} onClick={() => void sendTaskChat()}>
+              Send
+            </Button>
+          </div>
+        </Panel>
+
         <Panel title="Actions">
           <div className="flex flex-wrap gap-2">
             {task.available_actions.map((action) => (
@@ -1024,9 +977,7 @@ function TaskDetailDrawer({
                 variant={action === "mark_complete" ? "primary" : "secondary"}
                 type="button"
                 onClick={() => {
-                  if (action === "add_note") {
-                    return void onAddNote();
-                  }
+                  if (action === "add_note") return void onAddNote();
                   const nextStatusMap: Partial<Record<RoadmapTaskActionId, ApprovalTaskStatus>> = {
                     mark_complete: "completed",
                     mark_in_progress: "in_progress",
@@ -1034,9 +985,7 @@ function TaskDetailDrawer({
                     request_changes: "changes_requested"
                   };
                   const nextStatus = nextStatusMap[action as keyof typeof nextStatusMap];
-                  if (nextStatus) {
-                    void onUpdateTaskStatus(nextStatus);
-                  }
+                  if (nextStatus) void onUpdateTaskStatus(nextStatus);
                 }}
                 disabled={isSaving}
               >
@@ -1052,7 +1001,6 @@ function TaskDetailDrawer({
               </Button>
             ))}
           </div>
-
           <div className="mt-4">
             <label htmlFor="task-note" className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               Add note
@@ -1097,17 +1045,24 @@ export function RoadmapWorkspaceView() {
   const [noteDraft, setNoteDraft] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  const [isAdjustOpen, setIsAdjustOpen] = useState(false);
+  const [adjustMessages, setAdjustMessages] = useState<{ id: string; role: "user" | "assistant"; content: string }[]>([]);
+  const [adjustInput, setAdjustInput] = useState("");
+  const [adjustLoading, setAdjustLoading] = useState(false);
+  const [pendingProposal, setPendingProposal] = useState<RoadmapWorkspace | null>(null);
+  const [proposalSummary, setProposalSummary] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-
     async function load() {
       setLoading(true);
       setError(null);
       try {
         const projectData = await getProjects();
-        const projectId = requestedProjectId && projectData.some((project) => project.id === requestedProjectId)
-          ? requestedProjectId
-          : projectData[0]?.id;
+        const projectId =
+          requestedProjectId && projectData.some((project) => project.id === requestedProjectId)
+            ? requestedProjectId
+            : projectData[0]?.id;
         if (!projectId) throw new Error("No projects are available for the roadmap.");
         if (!cancelled) {
           setProjects(projectData);
@@ -1120,16 +1075,11 @@ export function RoadmapWorkspaceView() {
         }
       } catch (loadError) {
         console.error(loadError);
-        if (!cancelled) {
-          setError("Unable to load the roadmap workspace. Please try again.");
-        }
+        if (!cancelled) setError("Unable to load the roadmap workspace. Please try again.");
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
-
     void load();
     return () => {
       cancelled = true;
@@ -1140,6 +1090,13 @@ export function RoadmapWorkspaceView() {
     if (!workspace || !selectedTaskId) return null;
     return workspace.tasks.find((task) => task.id === selectedTaskId) ?? null;
   }, [workspace, selectedTaskId]);
+
+  const remainingDays = useMemo(() => {
+    if (!workspace) return 0;
+    return workspace.tasks
+      .filter((t) => t.status !== "completed" && t.status !== "cancelled" && t.status !== "rejected")
+      .reduce((sum, t) => sum + (typeof t.estimated_sla_days === "number" ? t.estimated_sla_days : 0), 0);
+  }, [workspace]);
 
   const clearFilters = () => {
     setSearch("");
@@ -1153,7 +1110,6 @@ export function RoadmapWorkspaceView() {
     if (!workspace || !selectedTask) return;
     const shouldContinue = window.confirm(`Update “${selectedTask.title}” to ${statusMeta[nextStatus].label}?`);
     if (!shouldContinue) return;
-
     try {
       setIsSaving(true);
       if (!selectedProjectId) return;
@@ -1171,7 +1127,6 @@ export function RoadmapWorkspaceView() {
 
   const handleAddNote = async () => {
     if (!workspace || !selectedTask || !noteDraft.trim()) return;
-
     try {
       setIsSaving(true);
       if (!selectedProjectId) return;
@@ -1182,6 +1137,55 @@ export function RoadmapWorkspaceView() {
     } catch (addError) {
       console.error(addError);
       setNotice("Unable to save the note right now.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAdjustSend = async () => {
+    const text = adjustInput.trim();
+    if (!text || !workspace || !selectedProjectId || adjustLoading) return;
+    setAdjustLoading(true);
+    setAdjustInput("");
+    setAdjustMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", content: text }]);
+    try {
+      const result = await mockRoadmapApi.proposeRoadmapEdit(selectedProjectId, text);
+      setAdjustMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", content: result.message }]);
+      if (result.proposal) {
+        setPendingProposal(result.proposal);
+        setProposalSummary(result.summary);
+      } else {
+        setPendingProposal(null);
+        setProposalSummary(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setAdjustMessages((prev) => [
+        ...prev,
+        {
+          id: `e-${Date.now()}`,
+          role: "assistant",
+          content: "I could not process that request. Try rephrasing, or name the task more specifically."
+        }
+      ]);
+    } finally {
+      setAdjustLoading(false);
+    }
+  };
+
+  const handleApplyProposal = async () => {
+    if (!pendingProposal || !selectedProjectId) return;
+    try {
+      setIsSaving(true);
+      const next = await mockRoadmapApi.applyRoadmapEdit(selectedProjectId, pendingProposal);
+      setWorkspace(next);
+      setPendingProposal(null);
+      setProposalSummary(null);
+      setNotice("Roadmap updated from the proposed changes.");
+      setIsAdjustOpen(false);
+    } catch (err) {
+      console.error(err);
+      setNotice("Unable to apply the proposed roadmap changes.");
     } finally {
       setIsSaving(false);
     }
@@ -1205,7 +1209,11 @@ export function RoadmapWorkspaceView() {
         <EmptyState
           title="Roadmap unavailable"
           description={error ?? "The roadmap is not available right now."}
-          action={<Button variant="primary" onClick={() => window.location.reload()}>Reload</Button>}
+          action={
+            <Button variant="primary" onClick={() => window.location.reload()}>
+              Reload
+            </Button>
+          }
         />
       </AppShell>
     );
@@ -1226,7 +1234,11 @@ export function RoadmapWorkspaceView() {
                 onChange={(event) => router.push(`/roadmap?projectId=${encodeURIComponent(event.target.value)}`)}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
               >
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
               </select>
               <Button variant={view === "graph" ? "primary" : "secondary"} type="button" onClick={() => setView("graph")}>
                 Graph view
@@ -1234,23 +1246,41 @@ export function RoadmapWorkspaceView() {
               <Button variant={view === "list" ? "primary" : "secondary"} type="button" onClick={() => setView("list")}>
                 List view
               </Button>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => {
+                  setIsAdjustOpen(true);
+                  setAdjustMessages([
+                    {
+                      id: "sys-welcome",
+                      role: "assistant",
+                      content: `I can help revise the roadmap for “${workspace.project_name}”. Describe the change (e.g. remove a step, mark a task complete, add an inspection). Suggestions are illustrative only — not official regulatory advice. Review and Apply before anything changes.`
+                    }
+                  ]);
+                  setPendingProposal(null);
+                  setProposalSummary(null);
+                  setAdjustInput("");
+                }}
+              >
+                Adjust roadmap
+              </Button>
             </div>
           }
         />
 
         {notice ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {notice}
-          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           {[
             { label: "Total tasks", value: workspace.summary.total_tasks },
             { label: "Completed", value: workspace.summary.completed_tasks },
             { label: "Pending", value: workspace.summary.pending_tasks },
             { label: "Blocked", value: workspace.summary.blocked_tasks },
-            { label: "In progress", value: workspace.summary.in_progress_tasks }
+            { label: "In progress", value: workspace.summary.in_progress_tasks },
+            { label: "Est. time remaining", value: formatRemainingEstimate(remainingDays) }
           ].map((metric) => (
             <Panel key={metric.label} className="p-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{metric.label}</p>
@@ -1307,7 +1337,9 @@ export function RoadmapWorkspaceView() {
           <div
             className="fixed inset-0 z-40 bg-slate-900/30"
             onClick={() => setSelectedTaskId(null)}
-            onKeyDown={(e) => { if (e.key === 'Escape') setSelectedTaskId(null); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSelectedTaskId(null);
+            }}
             role="button"
             tabIndex={-1}
             aria-label="Close task details"
@@ -1316,6 +1348,7 @@ export function RoadmapWorkspaceView() {
             task={selectedTask}
             projectName={workspace.project_name}
             workspace={workspace}
+            projectId={selectedProjectId ?? workspace.project_id}
             onClose={() => setSelectedTaskId(null)}
             onTaskSelection={(taskId) => setSelectedTaskId(taskId)}
             onUpdateTaskStatus={handleTaskUpdate}
@@ -1325,6 +1358,77 @@ export function RoadmapWorkspaceView() {
             isSaving={isSaving}
           />
         </>
+      ) : null}
+
+      {isAdjustOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-[#172b3a]">Adjust roadmap</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Illustrative suggestions only. Changes apply to this project’s mock roadmap after you confirm.
+                </p>
+              </div>
+              <Button variant="ghost" type="button" onClick={() => setIsAdjustOpen(false)}>
+                Close
+              </Button>
+            </div>
+            <div className="flex max-h-[360px] flex-col gap-2 overflow-y-auto bg-slate-50 px-5 py-4">
+              {adjustMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={[
+                    "max-w-[90%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm",
+                    msg.role === "assistant" ? "self-start bg-white text-[#172b3a] ring-1 ring-slate-200" : "self-end bg-[#27628a] text-white"
+                  ].join(" ")}
+                >
+                  {msg.content}
+                </div>
+              ))}
+              {adjustLoading ? <p className="text-xs text-slate-500">Thinking…</p> : null}
+            </div>
+            {pendingProposal && proposalSummary ? (
+              <div className="border-t border-slate-100 bg-amber-50 px-5 py-3">
+                <p className="text-sm font-medium text-amber-900">Proposed change</p>
+                <p className="mt-1 text-sm text-amber-800">{proposalSummary}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" variant="primary" disabled={isSaving} onClick={() => void handleApplyProposal()}>
+                    {isSaving ? "Applying…" : "Apply changes"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setPendingProposal(null);
+                      setProposalSummary(null);
+                    }}
+                  >
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex gap-2 border-t border-slate-100 px-5 py-3">
+              <input
+                value={adjustInput}
+                onChange={(e) => setAdjustInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleAdjustSend();
+                  }
+                }}
+                placeholder="Describe the roadmap change…"
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                disabled={adjustLoading}
+              />
+              <Button type="button" variant="primary" disabled={adjustLoading || !adjustInput.trim()} onClick={() => void handleAdjustSend()}>
+                Send
+              </Button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </AppShell>
   );

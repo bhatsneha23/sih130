@@ -1202,9 +1202,122 @@ export default function DocumentsPage() {
   });
   const [isUploading, setIsUploading] = useState(false);
   const [role, setRole] = useState<DemoRole>('Applicant');
+    // DigiLocker integration (UI placeholders – wire to real API when available)
+  type DigiLockerDoc = {
+    id: string;
+    name: string;
+    type: string;
+    issuedBy: string;
+    issuedOn: string;
+  };
+
+  type DocumentWithSource = ProjectDocument & { source?: "digilocker" | "manual" };
+
+  const [digilockerConnected, setDigilockerConnected] = useState(false);
+  const [digilockerLastSync, setDigilockerLastSync] = useState<string | null>(null);
+  const [isDigiLockerModalOpen, setIsDigiLockerModalOpen] = useState(false);
+  const [digilockerDocs, setDigilockerDocs] = useState<DigiLockerDoc[]>([]);
+  const [selectedDigiLockerIds, setSelectedDigiLockerIds] = useState<string[]>([]);
+  const [digilockerLoading, setDigilockerLoading] = useState(false);
+  const [digilockerError, setDigilockerError] = useState<string | null>(null);
+  const [digilockerImportSuccess, setDigilockerImportSuccess] = useState<string | null>(null);
+  const [linkProjectId, setLinkProjectId] = useState("");
+  const [linkTaskNote, setLinkTaskNote] = useState("");
+
+  // Enrich loaded docs with a default source label for UI
+  const documentsWithSource: DocumentWithSource[] = documents.map((doc) => ({
+    ...doc,
+    source: (doc as DocumentWithSource).source ?? "manual"
+  }));
 
   useEffect(() => setRole(getStoredDemoRole()), []);
+    const handleConnectDigiLocker = () => {
+    // Placeholder: replace with real DigiLocker OAuth / consent flow
+    setDigilockerConnected(true);
+    setDigilockerLastSync(new Date().toISOString());
+  };
 
+  const handleDisconnectDigiLocker = () => {
+    // Placeholder: replace with real session revoke
+    setDigilockerConnected(false);
+    setDigilockerLastSync(null);
+    setDigilockerDocs([]);
+    setSelectedDigiLockerIds([]);
+  };
+
+  const handleFetchDigiLockerDocs = async () => {
+    setIsDigiLockerModalOpen(true);
+    setDigilockerError(null);
+    setDigilockerImportSuccess(null);
+    setSelectedDigiLockerIds([]);
+    setLinkProjectId(uploadProject?.id ?? "");
+    setLinkTaskNote("");
+    setDigilockerLoading(true);
+
+    try {
+      // Placeholder: replace with real DigiLocker list API call
+      await new Promise((r) => setTimeout(r, 600));
+      const mockDocs: DigiLockerDoc[] = [
+        { id: "dl-1", name: "Aadhaar e-KYC.pdf", type: "Identity", issuedBy: "UIDAI", issuedOn: "2025-11-12" },
+        { id: "dl-2", name: "PAN Card.pdf", type: "Identity", issuedBy: "Income Tax Dept", issuedOn: "2024-03-08" },
+        { id: "dl-3", name: "GST Registration Certificate.pdf", type: "Business", issuedBy: "GSTN", issuedOn: "2025-06-21" },
+        { id: "dl-4", name: "Udyam Registration.pdf", type: "Business", issuedBy: "MSME", issuedOn: "2025-09-02" },
+        { id: "dl-5", name: "Factory Licence (State).pdf", type: "Compliance", issuedBy: "Labour Dept", issuedOn: "2025-01-18" }
+      ];
+      setDigilockerDocs(mockDocs);
+      setDigilockerLastSync(new Date().toISOString());
+    } catch {
+      setDigilockerError("Unable to fetch DigiLocker documents. Please try again later.");
+      setDigilockerDocs([]);
+    } finally {
+      setDigilockerLoading(false);
+    }
+  };
+
+  const toggleDigiLockerSelection = (id: string) => {
+    setSelectedDigiLockerIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleImportSelected = async () => {
+    if (selectedDigiLockerIds.length === 0) return;
+    setDigilockerLoading(true);
+    setDigilockerError(null);
+    setDigilockerImportSuccess(null);
+
+    try {
+      // Placeholder: replace with real import API that creates ProjectDocument records
+      const project = projects.find((p) => p.id === linkProjectId) ?? uploadProject;
+      if (!project) throw new Error("Select a project before importing.");
+
+      const selected = digilockerDocs.filter((d) => selectedDigiLockerIds.includes(d.id));
+      for (const item of selected) {
+        const input: UploadDocumentInput = {
+          projectId: project.id,
+          projectName: project.name,
+          name: item.name,
+          type: item.type,
+          category: "Other",
+          sizeLabel: "—",
+          relatedTaskIds: [],
+          description: `Imported from DigiLocker (${item.issuedBy}). Issued on ${item.issuedOn}. Import does not automatically satisfy any requirement — link and verify as needed.`
+        };
+        await uploadDocument(input);
+      }
+
+      await fetchDocuments();
+      setDigilockerImportSuccess(
+        `${selected.length} document${selected.length > 1 ? "s" : ""} imported. They are not automatically verified or linked to requirements.`
+      );
+      setSelectedDigiLockerIds([]);
+    } catch (err) {
+      console.error(err);
+      setDigilockerError("Import failed. Please try again.");
+    } finally {
+      setDigilockerLoading(false);
+    }
+  };
   const selectedProject = projects.find((project) => project.id === projectFilter);
   const uploadProject = selectedProject ?? projects[0];
 
@@ -1279,15 +1392,16 @@ export default function DocumentsPage() {
     }
   };
 
-  const filteredDocuments = documents.filter(doc => {
-    const matchesSearch = doc.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          doc.type.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === 'All' || doc.category === categoryFilter;
+  const filteredDocuments = documentsWithSource.filter((doc) => {
+    const matchesSearch =
+      doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      doc.type.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = categoryFilter === "All" || doc.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
   const categories = ['All', 'Engineering', 'Utilities', 'Environmental', 'Safety', 'Operations', 'Other'];
-
+  
   if (role === 'Officer') {
     return <OfficerWorkspace mode="documents" />;
   }
@@ -1295,15 +1409,66 @@ export default function DocumentsPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <PageHeader 
-          title="Documents" 
-          description={selectedProject ? `Documents for ${selectedProject.name}.` : "Manage and review documents across all projects."}
+        <PageHeader
+          title="Documents"
+          description={
+            selectedProject
+              ? `Documents for ${selectedProject.name}.`
+              : "Manage and review documents across all projects."
+          }
           actions={
-            <Button variant="primary" onClick={() => setIsUploadOpen(true)}>
-              Upload document
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                onClick={digilockerConnected ? handleFetchDigiLockerDocs : handleConnectDigiLocker}
+              >
+                {digilockerConnected ? "Import from DigiLocker" : "Connect DigiLocker"}
+              </Button>
+              <Button variant="primary" onClick={() => setIsUploadOpen(true)}>
+                Upload from device
+              </Button>
+            </div>
           }
         />
+                {/* DigiLocker connection panel */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-semibold text-[#172b3a]">DigiLocker</h2>
+                <StatusBadge tone={digilockerConnected ? "positive" : "neutral"}>
+                  {digilockerConnected ? "Connected" : "Not connected"}
+                </StatusBadge>
+              </div>
+              <p className="mt-1.5 max-w-2xl text-sm text-slate-600">
+                {digilockerConnected
+                  ? "Retrieve issued documents from your DigiLocker account into IndusAI. Imported files still need to be linked to project requirements and verified — import alone does not satisfy any approval."
+                  : "Connect DigiLocker to securely fetch issued certificates and identity documents. You can still upload files manually for anything not available in DigiLocker."}
+              </p>
+              {digilockerConnected && digilockerLastSync ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  Last sync: {new Date(digilockerLastSync).toLocaleString("en-IN")}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-shrink-0 flex-wrap gap-2">
+              {digilockerConnected ? (
+                <>
+                  <Button variant="primary" onClick={handleFetchDigiLockerDocs}>
+                    Fetch documents
+                  </Button>
+                  <Button variant="secondary" onClick={handleDisconnectDigiLocker}>
+                    Manage connection
+                  </Button>
+                </>
+              ) : (
+                <Button variant="primary" onClick={handleConnectDigiLocker}>
+                  Connect DigiLocker
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
 
         <Panel>
           <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -1369,12 +1534,15 @@ export default function DocumentsPage() {
                     onClick={() => setExpandedDocId(expandedDocId === doc.id ? null : doc.id)}
                   >
                     <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold text-[#172b3a]">{doc.name}</span>
                         <StatusBadge tone="neutral">{doc.type}</StatusBadge>
                         <StatusBadge tone="info">{doc.category}</StatusBadge>
+                        <StatusBadge tone={doc.source === "digilocker" ? "info" : "neutral"}>
+                          {doc.source === "digilocker" ? "DigiLocker" : "Manual upload"}
+                        </StatusBadge>
                       </div>
-                      <div className="text-xs text-slate-500 flex gap-4">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                         <span>Project: {doc.projectName}</span>
                         <span>Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}</span>
                         <span>Size: {doc.sizeLabel}</span>
@@ -1506,6 +1674,156 @@ export default function DocumentsPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+            {isDigiLockerModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl">
+            <div className="border-b border-slate-100 px-6 py-4">
+              <h2 className="text-xl font-semibold text-[#172b3a]">Import from DigiLocker</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Select documents to import. Importing does <strong>not</strong> automatically
+                satisfy or approve any project requirement — you can link them afterwards and
+                reuse one document across multiple requirements.
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {digilockerLoading && digilockerDocs.length === 0 ? (
+                <div className="space-y-3 py-6">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-14 animate-pulse rounded-xl bg-slate-100" />
+                  ))}
+                </div>
+              ) : digilockerError && digilockerDocs.length === 0 ? (
+                <EmptyState
+                  title="Could not load DigiLocker documents"
+                  description={digilockerError}
+                  action={
+                    <Button variant="secondary" onClick={handleFetchDigiLockerDocs}>
+                      Retry
+                    </Button>
+                  }
+                />
+              ) : digilockerDocs.length === 0 ? (
+                <EmptyState
+                  title="No documents available"
+                  description="No issued documents were returned from DigiLocker for this account."
+                />
+              ) : (
+                <div className="space-y-2">
+                  {digilockerDocs.map((item) => {
+                    const checked = selectedDigiLockerIds.includes(item.id);
+                    return (
+                      <label
+                        key={item.id}
+                        className={[
+                          "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors",
+                          checked
+                            ? "border-[#27628a] bg-[#eef8ff]"
+                            : "border-slate-200 bg-slate-50 hover:bg-white"
+                        ].join(" ")}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 rounded border-slate-300 text-[#27628a] focus:ring-[#27628a]"
+                          checked={checked}
+                          onChange={() => toggleDigiLockerSelection(item.id)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-[#172b3a]">{item.name}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {item.type} · Issued by {item.issuedBy} ·{" "}
+                            {new Date(item.issuedOn).toLocaleDateString("en-IN")}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              {digilockerDocs.length > 0 && (
+                <div className="mt-5 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Link to project
+                    </label>
+                    <select
+                      value={linkProjectId}
+                      onChange={(e) => setLinkProjectId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+                    >
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Optional note for requirements (not auto-linked)
+                    </label>
+                    <input
+                      type="text"
+                      value={linkTaskNote}
+                      onChange={(e) => setLinkTaskNote(e.target.value)}
+                      placeholder="e.g. Candidate for fire safety / site plan requirement"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      One imported document can later be associated with multiple requirements.
+                      Verification status remains separate from requirement status.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {digilockerImportSuccess && (
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  {digilockerImportSuccess}
+                </div>
+              )}
+              {digilockerError && digilockerDocs.length > 0 && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {digilockerError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-6 py-4">
+              <p className="text-xs text-slate-500">
+                {selectedDigiLockerIds.length} selected
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setIsDigiLockerModalOpen(false);
+                    setDigilockerImportSuccess(null);
+                    setDigilockerError(null);
+                  }}
+                  disabled={digilockerLoading}
+                >
+                  Close
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={handleImportSelected}
+                  disabled={
+                    digilockerLoading ||
+                    selectedDigiLockerIds.length === 0 ||
+                    !linkProjectId
+                  }
+                >
+                  {digilockerLoading ? "Importing…" : "Import selected"}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1840,30 +2158,307 @@ export default function ProjectDetailPage() {
 ```text
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader, Button, Panel } from "@/components/ui";
 import { createProject } from "@/lib/api";
 import type { CreateProjectInput, ProjectStage, SiteStatus } from "@/contracts/project-full";
 
+type ChatPhase = "chat" | "preparing" | "form" | "success";
+
+type ChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  content: string;
+};
+
+type QuestionId =
+  | "name"
+  | "organization"
+  | "sector"
+  | "description"
+  | "location"
+  | "stage"
+  | "investmentAmount"
+  | "siteStatus";
+
+type Question = {
+  id: QuestionId;
+  prompt: string;
+  required: boolean;
+  hint?: string;
+};
+
+const QUESTIONS: Question[] = [
+  {
+    id: "name",
+    prompt: "What is the name of your industrial project?",
+    required: true,
+    hint: "e.g. Vasavi Food Processing Unit"
+  },
+  {
+    id: "organization",
+    prompt: "Which organization or company is leading this project?",
+    required: true,
+    hint: "e.g. Gujarat Industrial Growth Cell"
+  },
+  {
+    id: "sector",
+    prompt: "What industry sector does this project belong to?",
+    required: false,
+    hint: "Manufacturing, Food processing, Textiles, Metals, Electronics, or Automotive. You can also type Skip."
+  },
+  {
+    id: "description",
+    prompt: "Briefly describe the project (what you plan to build or expand).",
+    required: false,
+    hint: "A short paragraph is enough. Type Skip to leave this blank."
+  },
+  {
+    id: "location",
+    prompt: "Where will the project be located? (state, district, or city)",
+    required: false,
+    hint: "e.g. Vadodara, Gujarat. Type Skip if not decided yet."
+  },
+  {
+    id: "stage",
+    prompt: "What stage is the project currently in?",
+    required: false,
+    hint: "Planning, Land acquisition, Construction, Pre-operational, or Operational. Type Skip for Planning."
+  },
+  {
+    id: "investmentAmount",
+    prompt: "What is the approximate investment amount?",
+    required: false,
+    hint: "e.g. ₹12.5 Cr. Type Skip if unknown."
+  },
+  {
+    id: "siteStatus",
+    prompt: "What is the current site status?",
+    required: false,
+    hint: "Unallocated, Allocated, Possession taken, or Developed. Type Skip for Unallocated."
+  }
+];
+
+const DEFAULT_FORM: CreateProjectInput = {
+  name: "",
+  organization: "",
+  sector: "Manufacturing",
+  description: "",
+  location: "",
+  stage: "planning",
+  investmentAmount: "",
+  siteStatus: "identified"
+};
+
+function normalizeStage(raw: string): ProjectStage {
+  const v = raw.trim().toLowerCase().replace(/\s+/g, "_");
+  if (v.includes("land")) return "land_acquisition";
+  if (v.includes("construct")) return "construction";
+  if (v.includes("pre")) return "pre_operational";
+  if (v.includes("operat")) return "operational";
+  return "planning";
+}
+
+function normalizeSiteStatus(raw: string): SiteStatus {
+  const v = raw.trim().toLowerCase().replace(/\s+/g, "_");
+  if (v.includes("lease")) return "leased";
+  if (v.includes("own")) return "owned";
+  if (v.includes("develop") || v.includes("under")) return "under_development";
+  return "identified";
+}
+
+function normalizeSector(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  if (v.includes("food")) return "Food processing";
+  if (v.includes("textile")) return "Textiles";
+  if (v.includes("metal")) return "Metals";
+  if (v.includes("electron")) return "Electronics";
+  if (v.includes("auto")) return "Automotive";
+  if (v.includes("manufact")) return "Manufacturing";
+  return raw.trim() || "Manufacturing";
+}
+
+function isSkip(text: string) {
+  return /^(skip|na|n\/a|none|-)$/i.test(text.trim());
+}
+
 export default function NewProjectPage() {
   const router = useRouter();
-  
-  const [formData, setFormData] = useState<CreateProjectInput>({
-    name: "",
-    organization: "",
-    sector: "Manufacturing",
-    description: "",
-    location: "",
-    stage: "planning" as ProjectStage,
-    investmentAmount: "",
-    siteStatus: "unallocated" as SiteStatus,
-  });
 
+  const [phase, setPhase] = useState<ChatPhase>("chat");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [draftAnswers, setDraftAnswers] = useState<Partial<CreateProjectInput>>({});
+  const [chatInput, setChatInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+
+  const [formData, setFormData] = useState<CreateProjectInput>(DEFAULT_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof CreateProjectInput, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Welcome message + first question
+  useEffect(() => {
+    if (messages.length > 0) return;
+    const welcome: ChatMessage = {
+      id: "welcome",
+      role: "assistant",
+      content:
+        "Hi — I’ll help you set up a new project profile for IndusAI. I’ll ask a few short questions one at a time. You can type Skip for optional fields. Ready?"
+    };
+    const first: ChatMessage = {
+      id: `q-${QUESTIONS[0].id}`,
+      role: "assistant",
+      content: QUESTIONS[0].prompt + (QUESTIONS[0].hint ? `\n\n${QUESTIONS[0].hint}` : "")
+    };
+    setMessages([welcome, first]);
+  }, [messages.length]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, phase]);
+
+  useEffect(() => {
+    if (phase === "chat") {
+      inputRef.current?.focus();
+    }
+  }, [phase, questionIndex]);
+
+  const progress = Math.min(questionIndex, QUESTIONS.length);
+  const progressPct = Math.round((progress / QUESTIONS.length) * 100);
+
+  const applyAnswer = (qid: QuestionId, raw: string) => {
+    const skipped = isSkip(raw);
+    setDraftAnswers((prev) => {
+      const next = { ...prev };
+      switch (qid) {
+        case "name":
+          next.name = skipped ? prev.name ?? "" : raw.trim();
+          break;
+        case "organization":
+          next.organization = skipped ? prev.organization ?? "" : raw.trim();
+          break;
+        case "sector":
+          next.sector = skipped ? "Manufacturing" : normalizeSector(raw);
+          break;
+        case "description":
+          next.description = skipped ? "" : raw.trim();
+          break;
+        case "location":
+          next.location = skipped ? "" : raw.trim();
+          break;
+        case "stage":
+          next.stage = skipped ? "planning" : normalizeStage(raw);
+          break;
+        case "investmentAmount":
+          next.investmentAmount = skipped ? "" : raw.trim();
+          break;
+        case "siteStatus":
+          next.siteStatus = skipped ? "identified" : normalizeSiteStatus(raw);
+          break;
+      }
+      return next;
+    });
+  };
+
+  const finishChatAndShowForm = (finalAnswers: Partial<CreateProjectInput>) => {
+    setPhase("preparing");
+    const merged: CreateProjectInput = {
+      ...DEFAULT_FORM,
+      ...finalAnswers,
+      name: (finalAnswers.name ?? "").trim(),
+      organization: (finalAnswers.organization ?? "").trim()
+    };
+    // Brief “preparing” state, then show the same form prefilled
+    window.setTimeout(() => {
+      setFormData(merged);
+      setPhase("form");
+    }, 900);
+  };
+
+  const handleSend = () => {
+    const text = chatInput.trim();
+    if (!text || isSending || phase !== "chat") return;
+
+    const current = QUESTIONS[questionIndex];
+    if (!current) return;
+
+    // Required fields cannot be skipped empty
+    if (current.required && isSkip(text)) {
+      setMessages((prev) => [
+        ...prev,
+        { id: `u-${Date.now()}`, role: "user", content: text },
+        {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          content: `This field is required. Please enter a ${current.id === "name" ? "project name" : "organization name"}.`
+        }
+      ]);
+      setChatInput("");
+      return;
+    }
+    if (current.required && !text.trim()) return;
+
+    setIsSending(true);
+    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: text };
+    setMessages((prev) => [...prev, userMsg]);
+    setChatInput("");
+
+    applyAnswer(current.id, text);
+
+    const nextIndex = questionIndex + 1;
+
+    // Build answers including this turn (state update is async)
+    const tentative: Partial<CreateProjectInput> = { ...draftAnswers };
+    if (current.id === "name") tentative.name = isSkip(text) ? tentative.name ?? "" : text.trim();
+    if (current.id === "organization")
+      tentative.organization = isSkip(text) ? tentative.organization ?? "" : text.trim();
+    if (current.id === "sector") tentative.sector = isSkip(text) ? "Manufacturing" : normalizeSector(text);
+    if (current.id === "description") tentative.description = isSkip(text) ? "" : text.trim();
+    if (current.id === "location") tentative.location = isSkip(text) ? "" : text.trim();
+    if (current.id === "stage") tentative.stage = isSkip(text) ? "planning" : normalizeStage(text);
+    if (current.id === "investmentAmount")
+      tentative.investmentAmount = isSkip(text) ? "" : text.trim();
+    if (current.id === "siteStatus")
+      tentative.siteStatus = isSkip(text) ? "identified" : normalizeSiteStatus(text);
+
+    window.setTimeout(() => {
+      if (nextIndex >= QUESTIONS.length) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `done-${Date.now()}`,
+            role: "assistant",
+            content:
+              "Thanks — I have everything I need. Preparing your project profile so you can review and edit it before creating."
+          }
+        ]);
+        setQuestionIndex(QUESTIONS.length);
+        setIsSending(false);
+        finishChatAndShowForm(tentative);
+        return;
+      }
+
+      setQuestionIndex(nextIndex);
+      const nextQ = QUESTIONS[nextIndex];
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `q-${nextQ.id}-${Date.now()}`,
+          role: "assistant",
+          content: nextQ.prompt + (nextQ.hint ? `\n\n${nextQ.hint}` : "")
+        }
+      ]);
+      setIsSending(false);
+    }, 350);
+  };
 
   const validate = () => {
     const newErrors: Partial<Record<keyof CreateProjectInput, string>> = {};
@@ -1876,31 +2471,47 @@ export default function NewProjectPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-    
+
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
-      await createProject(formData);
+      const created = await createProject(formData);
+      setCreatedProjectId(created.id);
       setIsSuccess(true);
-      setTimeout(() => {
-        router.push("/projects");
-      }, 1500);
+      setPhase("success");
+      // Navigate to the real project detail page using the API-returned id
+      window.setTimeout(() => {
+        router.push(`/projects/${encodeURIComponent(created.id)}`);
+      }, 1200);
     } catch (err) {
       console.error(err);
-      alert("Failed to create project");
+      setSubmitError("Failed to create project. Your answers are still here — you can try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
     if (errors[name as keyof CreateProjectInput]) {
-      setErrors(prev => ({ ...prev, [name]: undefined }));
+      setErrors((prev) => ({ ...prev, [name]: undefined }));
     }
   };
 
-  const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#172b3a] focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20";
+  const backToChat = () => {
+    setPhase("chat");
+    setSubmitError(null);
+    // Resume from last unanswered question if needed; otherwise stay at end
+    if (questionIndex >= QUESTIONS.length) {
+      setQuestionIndex(QUESTIONS.length - 1);
+    }
+  };
+
+  const inputClass =
+    "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-[#172b3a] focus:border-[#27628a] focus:outline-none focus:ring-2 focus:ring-[#27628a]/20";
   const labelClass = "block text-sm font-medium text-[#172b3a] mb-1.5";
   const errorClass = "text-xs text-red-600 mt-1";
 
@@ -1908,19 +2519,123 @@ export default function NewProjectPage() {
     <AppShell>
       <PageHeader
         title="New Project"
-        description="Create a new industrial project profile."
+        description={
+          phase === "chat" || phase === "preparing"
+            ? "Answer a few questions and we’ll prepare your project profile."
+            : "Review and edit the details before creating the project."
+        }
       />
 
       <div className="mx-auto max-w-3xl p-6">
-        {isSuccess ? (
-          <Panel className="text-center py-12">
-            <h2 className="text-2xl font-bold text-[#27628a] mb-2">Project Created Successfully!</h2>
-            <p className="text-slate-500">Redirecting to projects list...</p>
+        {/* ——— Chat phase ——— */}
+        {(phase === "chat" || phase === "preparing") && (
+          <Panel className="flex flex-col overflow-hidden p-0">
+            <div className="border-b border-slate-100 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-[#172b3a]">Project setup assistant</p>
+                <p className="text-xs text-slate-500">
+                  {Math.min(questionIndex + (phase === "preparing" ? 1 : 0), QUESTIONS.length)} of{" "}
+                  {QUESTIONS.length}
+                </p>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-[#27628a] transition-all duration-300"
+                  style={{ width: `${phase === "preparing" ? 100 : progressPct}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="flex max-h-[420px] min-h-[320px] flex-col gap-3 overflow-y-auto bg-[#f8fafc] px-4 py-4">
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={[
+                    "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+                    msg.role === "assistant"
+                      ? "self-start bg-white text-[#172b3a] shadow-sm ring-1 ring-slate-200"
+                      : "self-end bg-[#27628a] text-white"
+                  ].join(" ")}
+                >
+                  {msg.content}
+                </div>
+              ))}
+              {phase === "preparing" && (
+                <div className="self-start rounded-2xl bg-white px-3.5 py-2.5 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#27628a]" />
+                    Preparing your project profile…
+                  </span>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {phase === "chat" && (
+              <div className="flex gap-2 border-t border-slate-100 bg-white p-3">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder="Type your answer…"
+                  disabled={isSending}
+                  className={inputClass}
+                  aria-label="Chat message"
+                />
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={handleSend}
+                  disabled={isSending || !chatInput.trim()}
+                >
+                  Send
+                </Button>
+              </div>
+            )}
           </Panel>
-        ) : (
+        )}
+
+        {/* ——— Success ——— */}
+        {phase === "success" && isSuccess && (
+          <Panel className="py-12 text-center">
+            <h2 className="mb-2 text-2xl font-bold text-[#27628a]">Project Created Successfully!</h2>
+            <p className="text-slate-500">
+              {createdProjectId
+                ? "Opening your project workspace…"
+                : "Redirecting…"}
+            </p>
+          </Panel>
+        )}
+
+        {/* ——— Existing form (prefilled, fully editable) ——— */}
+        {phase === "form" && (
           <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-sm text-slate-600">
+                Review the details collected from the conversation. Everything is editable before you create the project.
+              </p>
+              <Button type="button" variant="secondary" onClick={backToChat}>
+                Back to conversation
+              </Button>
+            </div>
+
+            {submitError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {submitError}
+              </div>
+            )}
+
             <Panel>
-              <h3 className="text-lg font-bold text-[#172b3a] mb-4 pb-2 border-b border-slate-100">Basic Information</h3>
+              <h3 className="mb-4 border-b border-slate-100 pb-2 text-lg font-bold text-[#172b3a]">
+                Basic Information
+              </h3>
               <div className="space-y-4">
                 <div>
                   <label className={labelClass}>Project Name *</label>
@@ -1934,7 +2649,7 @@ export default function NewProjectPage() {
                   />
                   {errors.name && <p className={errorClass}>{errors.name}</p>}
                 </div>
-                
+
                 <div>
                   <label className={labelClass}>Organization Name *</label>
                   <input
@@ -1979,7 +2694,9 @@ export default function NewProjectPage() {
             </Panel>
 
             <Panel>
-              <h3 className="text-lg font-bold text-[#172b3a] mb-4 pb-2 border-b border-slate-100">Location</h3>
+              <h3 className="mb-4 border-b border-slate-100 pb-2 text-lg font-bold text-[#172b3a]">
+                Location
+              </h3>
               <div className="space-y-4">
                 <div>
                   <label className={labelClass}>State / District / City</label>
@@ -1996,7 +2713,9 @@ export default function NewProjectPage() {
             </Panel>
 
             <Panel>
-              <h3 className="text-lg font-bold text-[#172b3a] mb-4 pb-2 border-b border-slate-100">Project Details</h3>
+              <h3 className="mb-4 border-b border-slate-100 pb-2 text-lg font-bold text-[#172b3a]">
+                Project Details
+              </h3>
               <div className="space-y-4">
                 <div>
                   <label className={labelClass}>Project Stage</label>
@@ -3834,6 +4553,19 @@ type SlaState = "within" | "approaching" | "overdue";
 const statusTone: Record<ApplicationStatus, "positive" | "warning" | "neutral" | "info"> = {
   draft: "neutral", ready: "info", submitted: "info", under_review: "warning", changes_requested: "warning", approved: "positive", rejected: "warning", cancelled: "neutral"
 };
+const QUEUE_STATUSES: ApplicationStatus[] = ["ready", "submitted", "under_review", "changes_requested"];
+const HISTORY_STATUSES: ApplicationStatus[] = ["draft", "approved", "rejected", "cancelled"];
+
+function formatApplicationDate(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
 
 function statusLabel(status: string) {
   return status.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
@@ -3891,23 +4623,40 @@ export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
   useEffect(() => { void load(); }, []);
 
   const departments = useMemo(() => ["all", ...new Set(applications.map((application) => application.authority))], [applications]);
-  const filteredApplications = useMemo(() => applications
-    .filter((application) => {
-      const query = `${application.id} ${application.referenceNumber ?? ""} ${application.name} ${application.projectName} ${application.authority}`.toLowerCase();
-      const matchesSearch = query.includes(search.toLowerCase());
-      const matchesStatus = statusFilter === "all" || application.status === statusFilter;
-      const matchesDepartment = departmentFilter === "all" || application.authority === departmentFilter;
-      const matchesSla = slaFilter === "all" || slaState(application) === slaFilter;
-      return matchesSearch && matchesStatus && matchesDepartment && matchesSla;
-    })
-    .sort((left, right) => sortBy === "recent" ? new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime() : slaState(left).localeCompare(slaState(right))),
-    [applications, search, statusFilter, departmentFilter, slaFilter, sortBy]
+    const scopedApplications = useMemo(() => {
+    if (mode === "queue") {
+      return applications.filter((application) => QUEUE_STATUSES.includes(application.status));
+    }
+    if (mode === "applications") {
+      return applications.filter((application) => HISTORY_STATUSES.includes(application.status));
+    }
+    return applications;
+  }, [applications, mode]);
+
+  const filteredApplications = useMemo(
+    () =>
+      scopedApplications
+        .filter((application) => {
+          const query = `${application.id} ${application.referenceNumber ?? ""} ${application.name} ${application.projectName} ${application.authority}`.toLowerCase();
+          const matchesSearch = query.includes(search.toLowerCase());
+          const matchesStatus = statusFilter === "all" || application.status === statusFilter;
+          const matchesDepartment = departmentFilter === "all" || application.authority === departmentFilter;
+          const matchesSla = slaFilter === "all" || slaState(application) === slaFilter;
+          return matchesSearch && matchesStatus && matchesDepartment && matchesSla;
+        })
+        .sort((left, right) =>
+          sortBy === "recent"
+            ? new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime()
+            : slaState(left).localeCompare(slaState(right))
+        ),
+    [scopedApplications, search, statusFilter, departmentFilter, slaFilter, sortBy]
   );
   const selectedApplication = applications.find((application) => application.id === selectedApplicationId) ?? null;
   const selectedDocuments = selectedApplication ? documents.filter((document) => selectedApplication.documents.includes(document.id)) : [];
   const pendingDocuments = documents.filter((document) => document.verificationStatus === "pending" || document.verificationStatus === "needs_review");
-  const attentionApplications = applications.filter((application) => ["under_review", "submitted", "changes_requested"].includes(application.status) || slaState(application) !== "within");
-
+  const attentionApplications = applications.filter(
+    (application) => QUEUE_STATUSES.includes(application.status) || slaState(application) !== "within"
+  );
   async function handleApplicationAction(status: ApplicationStatus, message: string) {
     if (!selectedApplication) return;
     if (status === "approved" && !window.confirm("Approve this illustrative application?")) return;
@@ -3918,7 +4667,11 @@ export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
     }
     const next = await updateApplicationStatus(selectedApplication.projectId, selectedApplication.id, status, message);
     setApplications((current) => current.map((application) => next.find((item) => item.id === application.id) ?? application));
-    setNotice(`Application ${statusLabel(status).toLowerCase()} and timeline updated.`);
+    if (mode === "queue" && (status === "approved" || status === "rejected" || status === "cancelled")) {
+      setStatusFilter("all");
+      setSelectedApplicationId(null);
+    }
+    setNotice(`Application ${statusLabel(status).toLowerCase()} and timeline updated.`);    setNotice(`Application ${statusLabel(status).toLowerCase()} and timeline updated.`);
   }
 
   async function handleDocumentAction(document: ProjectDocument, status: DocumentStatus) {
@@ -3938,9 +4691,23 @@ export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
   if (loading) return <AppShell forcedRole="Officer"><Panel><div className="animate-pulse py-12 text-center text-sm text-slate-500">Loading officer workspace…</div></Panel></AppShell>;
   if (error) return <AppShell forcedRole="Officer"><EmptyState title="Officer workspace unavailable" description={error} action={<Button onClick={() => void load()}>Retry</Button>} /></AppShell>;
 
-  const title = mode === "dashboard" ? "Officer dashboard" : mode === "queue" ? "Review queue" : mode === "applications" ? "Applications" : "Document review";
-  const description = mode === "dashboard" ? "Review workload, deadlines, and application activity requiring officer attention." : mode === "queue" ? "Prioritize assigned applications by status, department, and SLA state." : mode === "applications" ? "Inspect application records and open the detailed review workspace." : "Review applicant-submitted documents linked to applications and projects.";
-
+    const title =
+    mode === "dashboard"
+      ? "Officer dashboard"
+      : mode === "queue"
+        ? "Review queue"
+        : mode === "applications"
+          ? "Application history"
+          : "Document review";
+  const description =
+    mode === "dashboard"
+      ? "Review workload, deadlines, and application activity requiring officer attention."
+      : mode === "queue"
+        ? "Applications awaiting officer review. Approved and rejected records are not listed here."
+        : mode === "applications"
+          ? "History of reviewed and closed applications, including approved, rejected, and draft records."
+          : "Review applicant-submitted documents linked to applications and projects.";
+  
   return <AppShell forcedRole="Officer">
     <div className="space-y-6">
       <PageHeader eyebrow="Government Officer" title={title} description={description} actions={<StatusBadge tone="info">Illustrative officer workspace</StatusBadge>} />
@@ -3956,16 +4723,115 @@ export function OfficerWorkspace({ mode }: { mode: OfficerMode }) {
         </div>
       </>}
 
-      {(mode === "queue" || mode === "applications") && <Panel title={mode === "queue" ? "Applications requiring review" : "Application records"}>
-        <div className="mb-4 grid gap-3 md:grid-cols-[1.5fr,1fr,1fr,1fr,1fr]">
-          <input aria-label="Search officer applications" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ID, applicant, project, approval" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" />
-          <select aria-label="Filter application status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="all">All statuses</option>{["draft", "submitted", "under_review", "changes_requested", "approved", "rejected"].map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select>
-          <select aria-label="Filter department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">{departments.map((department) => <option key={department} value={department}>{department === "all" ? "All departments" : department}</option>)}</select>
-          <select aria-label="Filter SLA" value={slaFilter} onChange={(event) => setSlaFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="all">All SLA states</option><option value="within">Within SLA</option><option value="approaching">Approaching SLA</option><option value="overdue">Overdue</option></select>
-          <select aria-label="Sort applications" value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"><option value="sla">Sort by SLA</option><option value="recent">Sort by recent activity</option></select>
-        </div>
-        {filteredApplications.length === 0 ? <EmptyState title="No matching applications" description="Adjust the queue filters to find another application." /> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="border-b border-slate-200 text-xs uppercase tracking-[0.1em] text-slate-500"><tr>{["Application", "Applicant", "Project", "Approval", "Department", "Status", "SLA", "Action"].map((heading) => <th key={heading} className="px-3 py-3">{heading}</th>)}</tr></thead><tbody>{filteredApplications.map((application) => <tr key={application.id} className="border-b border-slate-100"><td className="px-3 py-3 font-medium">{application.referenceNumber ?? application.id}</td><td className="px-3 py-3">{projects.find((project) => project.id === application.projectId)?.organization ?? "Applicant"}</td><td className="px-3 py-3">{application.projectName}</td><td className="px-3 py-3">{application.name}</td><td className="px-3 py-3">{application.authority}</td><td className="px-3 py-3"><StatusBadge tone={statusTone[application.status]}>{statusLabel(application.status)}</StatusBadge></td><td className="px-3 py-3"><StatusBadge tone={slaTone(slaState(application))}>{slaLabel(slaState(application))}</StatusBadge></td><td className="px-3 py-3"><Button variant="secondary" onClick={() => openApplication(application.id)}>Open</Button></td></tr>)}</tbody></table></div>}
-      </Panel>}
+            {(mode === "queue" || mode === "applications") && (
+        <Panel title={mode === "queue" ? "Applications requiring review" : "Application history"}>
+          <div className="mb-4 grid gap-3 md:grid-cols-[1.5fr,1fr,1fr,1fr,1fr]">
+            <input
+              aria-label="Search officer applications"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search ID, applicant, project, approval"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            />
+            <select
+              aria-label="Filter application status"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            >
+              <option value="all">All statuses</option>
+              {(mode === "queue" ? QUEUE_STATUSES : HISTORY_STATUSES).map((status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status)}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter department"
+              value={departmentFilter}
+              onChange={(event) => setDepartmentFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            >
+              {departments.map((department) => (
+                <option key={department} value={department}>
+                  {department === "all" ? "All departments" : department}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter SLA"
+              value={slaFilter}
+              onChange={(event) => setSlaFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            >
+              <option value="all">All SLA states</option>
+              <option value="within">Within SLA</option>
+              <option value="approaching">Approaching SLA</option>
+              <option value="overdue">Overdue</option>
+            </select>
+            <select
+              aria-label="Sort applications"
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+            >
+              <option value="sla">Sort by SLA</option>
+              <option value="recent">Sort by recent activity</option>
+            </select>
+          </div>
+          {filteredApplications.length === 0 ? (
+            <EmptyState
+              title={mode === "queue" ? "No applications awaiting review" : "No application history found"}
+              description={
+                mode === "queue"
+                  ? "There are no submitted or in-review applications matching the current filters."
+                  : "No approved, rejected, or draft applications match the current filters."
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-slate-200 text-xs uppercase tracking-[0.1em] text-slate-500">
+                  <tr>
+                    {["Application", "Applicant", "Project", "Approval", "Department", "Status", "Date", "SLA", "Action"].map(
+                      (heading) => (
+                        <th key={heading} className="px-3 py-3">
+                          {heading}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredApplications.map((application) => (
+                    <tr key={application.id} className="border-b border-slate-100">
+                      <td className="px-3 py-3 font-medium">{application.referenceNumber ?? application.id}</td>
+                      <td className="px-3 py-3">
+                        {projects.find((project) => project.id === application.projectId)?.organization ?? "Applicant"}
+                      </td>
+                      <td className="px-3 py-3">{application.projectName}</td>
+                      <td className="px-3 py-3">{application.name}</td>
+                      <td className="px-3 py-3">{application.authority}</td>
+                      <td className="px-3 py-3">
+                        <StatusBadge tone={statusTone[application.status]}>{statusLabel(application.status)}</StatusBadge>
+                      </td>
+                      <td className="px-3 py-3">{formatApplicationDate(application.submittedAt ?? application.lastUpdatedAt)}</td>
+                      <td className="px-3 py-3">
+                        <StatusBadge tone={slaTone(slaState(application))}>{slaLabel(slaState(application))}</StatusBadge>
+                      </td>
+                      <td className="px-3 py-3">
+                        <Button variant="secondary" onClick={() => openApplication(application.id)}>
+                          Open
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      )}
 
       {mode === "documents" && <Panel title="Submitted documents requiring review"><div className="space-y-3">{documents.length === 0 ? <EmptyState title="No submitted documents" description="No documents are currently available for officer review." /> : documents.map((document) => { const application = applications.find((item) => item.documents.includes(document.id)); return <div key={document.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between"><div><p className="font-medium text-[#172b3a]">{document.name}</p><p className="text-sm text-slate-600">{application?.referenceNumber ?? "Unlinked application"} · {document.projectName}</p><p className="text-xs text-slate-500">Submitted {new Date(document.uploadedAt).toLocaleDateString()} · {document.category}</p></div><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={document.verificationStatus === "verified" ? "positive" : "warning"}>{document.verificationStatus === "verified" ? "Verified" : document.verificationStatus === "needs_review" ? "Correction required" : "Pending verification"}</StatusBadge><Button variant="secondary" onClick={() => void handleDocumentAction(document, "verified")}>Verify Document</Button><Button variant="secondary" onClick={() => void handleDocumentAction(document, "needs_review")}>Request Correction</Button></div></div>})}</div></Panel>}
 
@@ -4101,11 +4967,101 @@ function sortTasks(tasks: RoadmapTask[], sortBy: string) {
   return sorted;
 }
 
+function getNodeVisual(status: ApprovalTaskStatus, readiness?: RoadmapTask["readiness"]) {
+  // Blocked only when the task is explicitly blocked by status or readiness.
+  // Having prerequisites alone does not make a node blocked.
+  const isBlocked =
+    status === "blocked" || readiness === "blocked";
+
+  if (isBlocked) {
+    return {
+      fill: "#e2e8f0",
+      text: "#475569",
+      border: "#94a3b8",
+      muted: true,
+      label: "Blocked"
+    };
+  }
+
+  switch (status) {
+    case "completed":
+      return {
+        fill: "#10b981",
+        text: "#ffffff",
+        border: "#059669",
+        muted: false,
+        label: "Completed"
+      };
+    case "in_progress":
+      return {
+        fill: "#f97316",
+        text: "#ffffff",
+        border: "#ea580c",
+        muted: false,
+        label: "In progress"
+      };
+    case "not_started":
+    case "pending":
+      return {
+        fill: "#3b82f6",
+        text: "#ffffff",
+        border: "#2563eb",
+        muted: false,
+        label: status === "not_started" ? "Not started" : "Pending"
+      };
+    case "submitted":
+    case "under_review":
+      return {
+        fill: "#8b5cf6",
+        text: "#ffffff",
+        border: "#7c3aed",
+        muted: false,
+        label: status === "submitted" ? "Submitted" : "Under review"
+      };
+    case "changes_requested":
+      return {
+        fill: "#f59e0b",
+        text: "#ffffff",
+        border: "#d97706",
+        muted: false,
+        label: "Changes requested"
+      };
+    case "rejected":
+      return {
+        fill: "#ef4444",
+        text: "#ffffff",
+        border: "#dc2626",
+        muted: false,
+        label: "Rejected"
+      };
+    case "cancelled":
+      return {
+        fill: "#64748b",
+        text: "#ffffff",
+        border: "#475569",
+        muted: false,
+        label: "Cancelled"
+      };
+    default: {
+      // Fallback for any future status values
+      const meta = statusMeta[status as ApprovalTaskStatus];
+      return {
+        fill: "#64748b",
+        text: "#ffffff",
+        border: "#475569",
+        muted: false,
+        label: meta?.label ?? String(status)
+      };
+    }
+  }
+}
+
 function NodeShape({
   type,
   text,
   selected,
   status,
+  readiness,
   x,
   y,
   width,
@@ -4116,49 +5072,108 @@ function NodeShape({
   text: string;
   selected: boolean;
   status: ApprovalTaskStatus;
+  readiness?: RoadmapTask["readiness"];
   x: number;
   y: number;
   width: number;
   height: number;
   onClick: () => void;
 }) {
-  const fill = typeMeta[type].color;
-  const border = selected ? "#111827" : "#dbeafe";
-  const statusColor = {
-    not_started: "#94a3b8",
-    blocked: "#f59e0b",
-    pending: "#64748b",
-    in_progress: "#3b82f6",
-    submitted: "#0ea5e9",
-    under_review: "#8b5cf6",
-    changes_requested: "#f97316",
-    completed: "#10b981",
-    rejected: "#ef4444",
-    cancelled: "#64748b"
-  }[status];
+  const visual = getNodeVisual(status, readiness);
+  const border = selected ? "#0f172a" : visual.border;
+  const strokeWidth = selected ? 3.5 : 1.75;
+
+  // Split long titles into up to 2 lines for readability
+  const words = text.split(" ");
+  let line1 = text;
+  let line2 = "";
+  if (text.length > 18 && words.length > 1) {
+    const mid = Math.ceil(words.length / 2);
+    line1 = words.slice(0, mid).join(" ");
+    line2 = words.slice(mid).join(" ");
+  }
 
   const shape =
     type === "document"
-      ? { shape: "circle", cx: x + width / 2, cy: y + height / 2, rx: width / 2 }
+      ? { shape: "circle" as const, cx: x + width / 2, cy: y + height / 2, r: Math.max(width / 2, 42) }
       : type === "inspection"
-        ? { shape: "diamond", points: `${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}` }
-        : { shape: "rect", x, y, width, height };
+        ? {
+            shape: "diamond" as const,
+            points: `${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}`
+          }
+        : { shape: "rect" as const, x, y, width, height };
 
   return (
     <g onClick={onClick} style={{ cursor: "pointer" }}>
       {shape.shape === "circle" ? (
-        <circle cx={shape.cx} cy={shape.cy} r={Math.max(width / 2, 34)} fill={fill} opacity={selected ? 1 : 0.85} stroke={border} strokeWidth={selected ? 2.5 : 1.5} />
+        <circle
+          cx={shape.cx}
+          cy={shape.cy}
+          r={shape.r}
+          fill={visual.fill}
+          opacity={visual.muted ? 0.55 : selected ? 1 : 0.95}
+          stroke={border}
+          strokeWidth={strokeWidth}
+        />
       ) : shape.shape === "diamond" ? (
-        <polygon points={shape.points} fill={fill} opacity={selected ? 1 : 0.85} stroke={border} strokeWidth={selected ? 2.5 : 1.5} />
+        <polygon
+          points={shape.points}
+          fill={visual.fill}
+          opacity={visual.muted ? 0.55 : selected ? 1 : 0.95}
+          stroke={border}
+          strokeWidth={strokeWidth}
+        />
       ) : (
-        <rect x={shape.x} y={shape.y} width={shape.width} height={shape.height} rx={14} fill={fill} opacity={selected ? 1 : 0.9} stroke={border} strokeWidth={selected ? 2.5 : 1.5} />
+        <rect
+          x={shape.x}
+          y={shape.y}
+          width={shape.width}
+          height={shape.height}
+          rx={16}
+          fill={visual.fill}
+          opacity={visual.muted ? 0.55 : selected ? 1 : 0.95}
+          stroke={border}
+          strokeWidth={strokeWidth}
+        />
       )}
-      <circle cx={x + width - 10} cy={y + 10} r={6} fill={statusColor} stroke="#fff" strokeWidth={2} />
-      <text x={x + 12} y={y + 26} fill="#fff" fontSize={12} fontWeight={700} style={{ userSelect: "none" }}>
-        {text.length > 16 ? `${text.slice(0, 16)}…` : text}
+
+      {/* Title – multiline when needed */}
+      <text
+        x={x + width / 2}
+        y={line2 ? y + height / 2 - 10 : y + height / 2 - 4}
+        fill={visual.text}
+        fontSize={13}
+        fontWeight={700}
+        textAnchor="middle"
+        style={{ userSelect: "none", pointerEvents: "none" }}
+      >
+        {line1.length > 22 ? `${line1.slice(0, 20)}…` : line1}
       </text>
-      <text x={x + 12} y={y + 44} fill="rgba(255,255,255,0.9)" fontSize={10} style={{ userSelect: "none" }}>
-        {statusMeta[status].label}
+      {line2 ? (
+        <text
+          x={x + width / 2}
+          y={y + height / 2 + 8}
+          fill={visual.text}
+          fontSize={13}
+          fontWeight={700}
+          textAnchor="middle"
+          style={{ userSelect: "none", pointerEvents: "none" }}
+        >
+          {line2.length > 22 ? `${line2.slice(0, 20)}…` : line2}
+        </text>
+      ) : null}
+
+      {/* Status label under title */}
+      <text
+        x={x + width / 2}
+        y={line2 ? y + height / 2 + 26 : y + height / 2 + 16}
+        fill={visual.muted ? "#64748b" : "rgba(255,255,255,0.92)"}
+        fontSize={11}
+        fontWeight={500}
+        textAnchor="middle"
+        style={{ userSelect: "none", pointerEvents: "none" }}
+      >
+        {visual.label}
       </text>
     </g>
   );
@@ -4178,15 +5193,10 @@ function DependencyGraph({
   const [isDragging, setIsDragging] = useState(false);
   const dragState = useRef<{ x: number; y: number } | null>(null);
 
-  const layout = useMemo(() => {
+    const layout = useMemo(() => {
     if (!workspace || workspace.graph.nodes.length === 0) {
-      return { nodes: [], edges: [] };
+      return { nodes: [], edges: [], width: 900, height: 560 };
     }
-
-    const incomingCounts = new Map<string, number>();
-    workspace.graph.edges.forEach((edge) => {
-      incomingCounts.set(edge.target, (incomingCounts.get(edge.target) ?? 0) + 1);
-    });
 
     const layerMap = new Map<string, number>();
     const queue: string[] = [];
@@ -4223,34 +5233,35 @@ function DependencyGraph({
     });
 
     const maxLayer = Math.max(...[...layerGroups.keys()], 0);
-    const graphWidth = Math.max(800, (maxLayer + 1) * 220);
-    const availableWidth = Math.max(640, graphWidth);
     const maxItemsInLayer = Math.max(...[...layerGroups.values()].map((items) => items.length), 1);
-    const totalHeight = maxItemsInLayer * 110 + 100;
 
-    const nodeMap = new Map<string, RoadmapTask>();
-    workspace.graph.nodes.forEach((node) => {
-      nodeMap.set(node.id, node);
-    });
+    // Increased spacing for larger, more readable nodes
+    const nodeWidth = 200;
+    const nodeHeight = 96;
+    const layerGap = 260;
+    const rowGap = 140;
+
+    const graphWidth = Math.max(900, (maxLayer + 1) * layerGap + 80);
+    const totalHeight = Math.max(560, maxItemsInLayer * rowGap + 120);
 
     const nodes = workspace.graph.nodes.map((node) => {
       const layer = layerMap.get(node.id) ?? 0;
       const itemsInLayer = layerGroups.get(layer) ?? [];
       const index = itemsInLayer.indexOf(node.id);
-      const x = 30 + layer * 200 + (layer % 2) * 30;
-      const y = 40 + (index * 120) + (index % 2 ? 20 : 0);
+      const x = 40 + layer * layerGap + (layer % 2) * 24;
+      const y = 48 + index * rowGap + (index % 2 ? 16 : 0);
       return {
         ...node,
         layoutX: x,
         layoutY: y,
-        width: 170,
-        height: 80
+        width: nodeWidth,
+        height: nodeHeight
       };
     });
 
     const edgeData = workspace.graph.edges.map((edge) => {
-      const sourceNode = nodes.find((node) => node.id === edge.source)!;
-      const targetNode = nodes.find((node) => node.id === edge.target)!;
+      const sourceNode = nodes.find((n) => n.id === edge.source)!;
+      const targetNode = nodes.find((n) => n.id === edge.target)!;
       return {
         ...edge,
         sourceX: sourceNode.layoutX + sourceNode.width,
@@ -4260,7 +5271,7 @@ function DependencyGraph({
       };
     });
 
-    return { nodes, edges: edgeData, width: availableWidth, height: totalHeight };
+    return { nodes, edges: edgeData, width: graphWidth, height: totalHeight };
   }, [workspace]);
 
   useEffect(() => {
@@ -4347,14 +5358,14 @@ function DependencyGraph({
           }}
         >
           <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-            {layout.edges.map((edge) => (
+                        {layout.edges.map((edge) => (
               <path
                 key={edge.id}
-                d={`M ${edge.sourceX} ${edge.sourceY} C ${edge.sourceX + 70},${edge.sourceY} ${edge.targetX - 70},${edge.targetY} ${edge.targetX},${edge.targetY}`}
+                d={`M ${edge.sourceX} ${edge.sourceY} C ${edge.sourceX + 90},${edge.sourceY} ${edge.targetX - 90},${edge.targetY} ${edge.targetX},${edge.targetY}`}
                 fill="none"
-                stroke="#94a3b8"
-                strokeWidth={2}
-                strokeDasharray={edge.source === edge.target ? "4 4" : undefined}
+                stroke="#64748b"
+                strokeWidth={2.25}
+                strokeOpacity={0.85}
                 markerEnd="url(#arrowhead)"
               />
             ))}
@@ -4365,6 +5376,7 @@ function DependencyGraph({
                 text={node.title}
                 selected={selectedTaskId === node.id}
                 status={node.status}
+                readiness={node.readiness}
                 x={node.layoutX}
                 y={node.layoutY}
                 width={node.width}
@@ -4374,35 +5386,54 @@ function DependencyGraph({
             ))}
           </g>
           <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="7" refY="3.5" orient="auto">
-              <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+            <marker id="arrowhead" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+              <polygon points="0 0, 12 4, 0 8" fill="#64748b" />
             </marker>
           </defs>
         </svg>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Legend</p>
-          <div className="mt-3 space-y-2">
-            {Object.entries(typeMeta).map(([type, details]) => (
-              <div key={type} className="flex items-center gap-2 text-sm text-slate-700">
-                <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: details.color }} />
-                {details.label}
-              </div>
-            ))}
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+          Node background colors
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-emerald-500 shadow-sm" />
+            <span>Completed / approved</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-orange-500 shadow-sm" />
+            <span>In progress</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-blue-500 shadow-sm" />
+            <span>Available to start</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-slate-300 shadow-sm opacity-70" />
+            <span>Blocked (prerequisites incomplete)</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-violet-500 shadow-sm" />
+            <span>Submitted / under review</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-amber-500 shadow-sm" />
+            <span>Changes requested</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-red-500 shadow-sm" />
+            <span>Rejected</span>
+          </div>
+          <div className="flex items-center gap-2.5 text-sm text-slate-700">
+            <span className="inline-block h-4 w-4 rounded-md bg-slate-500 shadow-sm" />
+            <span>Cancelled</span>
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Status legend</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {Object.entries(statusMeta).map(([status, details]) => (
-              <span key={status} className={`inline-flex rounded-full px-2 py-1 text-[10px] font-medium ring-1 ${status === "positive" ? "" : ""}`}>
-                {details.label}
-              </span>
-            ))}
-          </div>
-        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Node shape still indicates type (rectangle = approval / action, circle = document, diamond = inspection). Selected nodes have a stronger dark border.
+        </p>
       </div>
     </div>
   );
@@ -6157,7 +7188,6 @@ export const NAV_ITEMS_BY_ROLE: Record<DemoRole, NavItem[]> = {
   Applicant: [
     { href: "/", label: "Dashboard" },
     { href: "/projects", label: "Projects" },
-    { href: "/roadmap", label: "Approval Roadmap" },
     { href: "/documents", label: "Documents" },
     { href: "/applications", label: "Applications" },
     { href: "/assistant", label: "AI Assistant" },
@@ -6167,7 +7197,6 @@ export const NAV_ITEMS_BY_ROLE: Record<DemoRole, NavItem[]> = {
     { href: "/", label: "Dashboard" },
     { href: "/officer", label: "Review Queue" },
     { href: "/applications", label: "Applications" },
-    { href: "/roadmap", label: "Approval Roadmap" },
     { href: "/documents", label: "Documents" }
   ],
   Administrator: [
@@ -6672,10 +7701,30 @@ function ensureRoadmapData(projectIdValue = roadmapBase.project_id): RoadmapWork
     return stored;
   }
 
-  if (projectIdValue !== roadmapBase.project_id) {
+    if (projectIdValue !== roadmapBase.project_id) {
     const project = ensureProjects().find((entry) => entry.id === projectIdValue);
     if (!project) {
-      throw new Error(`Project ${projectIdValue} not found in mock roadmap data.`);
+      // Graceful fallback for unknown / stale IDs instead of throwing
+            const fallback: MockProject = {
+        id: projectIdValue,
+        name: "New project",
+        sector: "Manufacturing",
+        stage: "planning",
+        status: "active",
+        location: "Not specified",
+        organization: "Not specified",
+        description: "",
+        investmentAmount: "",
+        siteStatus: "identified",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        progress: 0,
+        approvalCount: 5,
+        completedApprovals: 0
+      };
+      const generated = createProjectRoadmap(fallback);
+      writeStoredRoadmap(generated);
+      return generated;
     }
     const generated = createProjectRoadmap(project);
     writeStoredRoadmap(generated);
@@ -7122,7 +8171,6 @@ const defaultDocuments: ProjectDocument[] = [
     sourceVerificationStatus: "unverified"
   }
 ];
-
 const defaultApplications: ApplicationRecord[] = [
   {
     id: "app-101",
@@ -7159,6 +8207,59 @@ const defaultApplications: ApplicationRecord[] = [
       { id: "hist-3", timestamp: "2026-09-18T00:00:00Z", status: "submitted", message: "Application submitted for Water department assessment." },
       { id: "hist-4", timestamp: "2026-09-30T00:00:00Z", status: "approved", message: "Approved in the illustrative mock process." }
     ]
+  },
+  {
+    id: "app-103",
+    projectId,
+    projectName,
+    name: "Fire safety clearance application",
+    authority: "State fire services department",
+    referenceNumber: "FS-4410",
+    status: "submitted",
+    submittedAt: "2026-10-01T08:00:00Z",
+    lastUpdatedAt: "2026-10-01T08:00:00Z",
+    pendingAction: "Awaiting officer assignment",
+    relatedTaskIds: ["fire-safety-clearance"],
+    documents: ["doc-004"],
+    history: [
+      { id: "hist-5", timestamp: "2026-10-01T08:00:00Z", status: "submitted", message: "Fire safety package submitted for officer review." }
+    ]
+  },
+  {
+    id: "app-104",
+    projectId,
+    projectName,
+    name: "Effluent treatment consent",
+    authority: "Pollution control board",
+    referenceNumber: "ET-3301",
+    status: "changes_requested",
+    submittedAt: "2026-09-22T00:00:00Z",
+    lastUpdatedAt: "2026-10-02T14:00:00Z",
+    pendingAction: "Applicant must revise process balance evidence",
+    relatedTaskIds: ["effluent-treatment-review"],
+    documents: ["doc-003"],
+    history: [
+      { id: "hist-6", timestamp: "2026-09-22T00:00:00Z", status: "submitted", message: "Effluent consent application submitted." },
+      { id: "hist-7", timestamp: "2026-10-02T14:00:00Z", status: "changes_requested", message: "Officer requested updated process water balance." }
+    ]
+  },
+  {
+    id: "app-105",
+    projectId,
+    projectName,
+    name: "Site layout endorsement",
+    authority: "State industrial development authority",
+    referenceNumber: "SL-1102",
+    status: "rejected",
+    submittedAt: "2026-08-10T00:00:00Z",
+    lastUpdatedAt: "2026-08-25T00:00:00Z",
+    pendingAction: null,
+    relatedTaskIds: ["site-layout-plan"],
+    documents: ["doc-001"],
+    history: [
+      { id: "hist-8", timestamp: "2026-08-10T00:00:00Z", status: "submitted", message: "Site layout endorsement requested." },
+      { id: "hist-9", timestamp: "2026-08-25T00:00:00Z", status: "rejected", message: "Rejected: incomplete zoning setbacks on drawing." }
+    ]
   }
 ];
 
@@ -7182,14 +8283,96 @@ function createDocumentsForProject(project: MockProject): ProjectDocument[] {
 function createApplicationsForProject(project: MockProject): ApplicationRecord[] {
   const predefined: Record<string, ApplicationRecord[]> = {
     [projectId]: defaultApplications,
-    "proj-apex-textile": [
-      { id: "apex-app-factory", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Textile factory license application", authority: "Factory licensing office", referenceNumber: "AT-4102", status: "under_review", submittedAt: "2026-09-25T00:00:00Z", lastUpdatedAt: "2026-10-01T00:00:00Z", pendingAction: "Review textile layout comments", relatedTaskIds: ["proj-apex-textile-operating-license"], documents: ["apex-doc-land", "apex-doc-layout"], history: [{ id: "apex-hist-factory", timestamp: "2026-10-01T00:00:00Z", status: "under_review", message: "Textile factory license is under illustrative review." }] },
-      { id: "apex-app-pollution", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Dyeing and effluent consent application", authority: "Pollution control board", referenceNumber: "AT-4103", status: "changes_requested", submittedAt: "2026-09-22T00:00:00Z", lastUpdatedAt: "2026-09-29T00:00:00Z", pendingAction: "Update chemical process evidence", relatedTaskIds: ["proj-apex-textile-sector-approval"], documents: ["apex-doc-process"], history: [{ id: "apex-hist-pollution", timestamp: "2026-09-29T00:00:00Z", status: "changes_requested", message: "Additional textile process evidence was requested." }] },
-      { id: "apex-app-water", projectId: "proj-apex-textile", projectName: "Apex Textile Expansion", name: "Textile water connection application", authority: "Municipal utilities office", referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: "2026-09-20T00:00:00Z", pendingAction: "Attach water demand estimate", relatedTaskIds: ["proj-apex-textile-operating-license"], documents: [], history: [{ id: "apex-hist-water", timestamp: "2026-09-20T00:00:00Z", status: "draft", message: "Draft water connection request created." }] }
+        "proj-apex-textile": [
+      {
+        id: "apex-app-factory",
+        projectId: "proj-apex-textile",
+        projectName: "Apex Textile Expansion",
+        name: "Textile factory license application",
+        authority: "Factory licensing office",
+        referenceNumber: "AT-4102",
+        status: "under_review",
+        submittedAt: "2026-09-25T00:00:00Z",
+        lastUpdatedAt: "2026-10-01T00:00:00Z",
+        pendingAction: "Review textile layout comments",
+        relatedTaskIds: ["proj-apex-textile-operating-license"],
+        documents: ["apex-doc-land", "apex-doc-layout"],
+        history: [
+          { id: "apex-hist-factory", timestamp: "2026-10-01T00:00:00Z", status: "under_review", message: "Textile factory license is under illustrative review." }
+        ]
+      },
+      {
+        id: "apex-app-pollution",
+        projectId: "proj-apex-textile",
+        projectName: "Apex Textile Expansion",
+        name: "Dyeing and effluent consent application",
+        authority: "Pollution control board",
+        referenceNumber: "AT-4103",
+        status: "changes_requested",
+        submittedAt: "2026-09-22T00:00:00Z",
+        lastUpdatedAt: "2026-09-29T00:00:00Z",
+        pendingAction: "Update chemical process evidence",
+        relatedTaskIds: ["proj-apex-textile-sector-approval"],
+        documents: ["apex-doc-process"],
+        history: [
+          { id: "apex-hist-pollution", timestamp: "2026-09-29T00:00:00Z", status: "changes_requested", message: "Additional textile process evidence was requested." }
+        ]
+      },
+      {
+        id: "apex-app-water",
+        projectId: "proj-apex-textile",
+        projectName: "Apex Textile Expansion",
+        name: "Textile water connection application",
+        authority: "Municipal utilities office",
+        referenceNumber: "AT-4104",
+        status: "approved",
+        submittedAt: "2026-09-10T00:00:00Z",
+        lastUpdatedAt: "2026-09-20T00:00:00Z",
+        pendingAction: null,
+        relatedTaskIds: ["proj-apex-textile-operating-license"],
+        documents: [],
+        history: [
+          { id: "apex-hist-water", timestamp: "2026-09-10T00:00:00Z", status: "submitted", message: "Water connection request submitted." },
+          { id: "apex-hist-water-ok", timestamp: "2026-09-20T00:00:00Z", status: "approved", message: "Water connection approved." }
+        ]
+      }
     ],
     "proj-mehta-metalworks": [
-      { id: "mehta-app-environment", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", name: "Metal process environmental consent application", authority: "Pollution control board", referenceNumber: "MM-1201", status: "under_review", submittedAt: "2026-09-30T00:00:00Z", lastUpdatedAt: "2026-10-02T00:00:00Z", pendingAction: "Review emissions plan", relatedTaskIds: ["proj-mehta-metalworks-sector-approval"], documents: ["mehta-doc-emissions"], history: [{ id: "mehta-hist-environment", timestamp: "2026-10-02T00:00:00Z", status: "under_review", message: "Metal process consent is under illustrative review." }] },
-      { id: "mehta-app-fire", projectId: "proj-mehta-metalworks", projectName: "Mehta Metalworks", name: "Scrap processing fire safety application", authority: "State fire services", referenceNumber: null, status: "draft", submittedAt: null, lastUpdatedAt: "2026-10-01T00:00:00Z", pendingAction: "Attach safety layout", relatedTaskIds: ["proj-mehta-metalworks-inspection"], documents: ["mehta-doc-safety"], history: [{ id: "mehta-hist-fire", timestamp: "2026-10-01T00:00:00Z", status: "draft", message: "Draft fire safety request created." }] }
+      {
+        id: "mehta-app-environment",
+        projectId: "proj-mehta-metalworks",
+        projectName: "Mehta Metalworks",
+        name: "Metal process environmental consent application",
+        authority: "Pollution control board",
+        referenceNumber: "MM-1201",
+        status: "submitted",
+        submittedAt: "2026-09-30T00:00:00Z",
+        lastUpdatedAt: "2026-10-02T00:00:00Z",
+        pendingAction: "Review emissions plan",
+        relatedTaskIds: ["proj-mehta-metalworks-sector-approval"],
+        documents: ["mehta-doc-emissions"],
+        history: [
+          { id: "mehta-hist-environment", timestamp: "2026-10-02T00:00:00Z", status: "submitted", message: "Metal process consent submitted for review." }
+        ]
+      },
+      {
+        id: "mehta-app-fire",
+        projectId: "proj-mehta-metalworks",
+        projectName: "Mehta Metalworks",
+        name: "Scrap processing fire safety application",
+        authority: "State fire services",
+        referenceNumber: "MM-1202",
+        status: "rejected",
+        submittedAt: "2026-09-15T00:00:00Z",
+        lastUpdatedAt: "2026-09-28T00:00:00Z",
+        pendingAction: null,
+        relatedTaskIds: ["proj-mehta-metalworks-inspection"],
+        documents: ["mehta-doc-safety"],
+        history: [
+          { id: "mehta-hist-fire", timestamp: "2026-09-15T00:00:00Z", status: "submitted", message: "Fire safety request submitted." },
+          { id: "mehta-hist-fire-rej", timestamp: "2026-09-28T00:00:00Z", status: "rejected", message: "Rejected: incomplete emergency access layout." }
+        ]
+      }
     ]
   };
   return predefined[project.id] ?? [];
@@ -7677,7 +8860,10 @@ const defaultProjects: MockProject[] = [
 ];
 
 function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
-  const seed = {
+  const predefinedSeed: Record<
+    string,
+    { approval: string; document: string; authority: string; license: string }
+  > = {
     "proj-apex-textile": {
       approval: "Dyeing and effluent consent",
       document: "Textile process and chemical plan",
@@ -7690,10 +8876,15 @@ function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
       authority: "Pollution control board",
       license: "Metalworks operating license"
     }
-  }[project.id];
-  if (!seed) {
-    throw new Error(`No predefined roadmap exists for project ${project.id}.`);
-  }
+  };
+
+  const seed = predefinedSeed[project.id] ?? {
+    approval: `${project.sector} sector consent`,
+    document: `${project.name} process and compliance plan`,
+    authority: "Pollution control board",
+    license: `${project.name} operating license`
+  };
+
   const prefix = project.id;
   const ids = {
     site: `${prefix}-site-plan`,
@@ -7702,9 +8893,12 @@ function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
     license: `${prefix}-operating-license`
   };
   const now = new Date().toISOString();
+
   const task = (templateId: string, overrides: Partial<RoadmapTask>): RoadmapTask => {
     const template = roadmapBase.tasks.find((entry) => entry.id === templateId);
-    if (!template) throw new Error(`Roadmap template ${templateId} not found.`);
+    if (!template) {
+      throw new Error(`Roadmap template ${templateId} not found.`);
+    }
     return makeRoadmapTask({
       ...template,
       id: `${prefix}-${templateId}`,
@@ -7720,28 +8914,81 @@ function createProjectRoadmap(project: MockProject): RoadmapWorkspace {
       ...overrides
     });
   };
+
   const tasks = [
-    task("site-layout-plan", { id: ids.site, title: `${project.name} site plan`, description: `Illustrative site and infrastructure planning for ${project.name}.`, required_documents: [`${project.name} site plan.pdf`], status: "in_progress", readiness: "at_risk", available_actions: ["mark_complete", "add_note"] }),
-    task("effluent-treatment-review", { id: ids.sector, title: seed.approval, description: `Review the ${seed.approval.toLowerCase()} requirements for ${project.name}.`, authority: seed.authority, required_documents: [`${seed.document}.pdf`], prerequisites: [ids.site], status: "pending", readiness: "needs_review", available_actions: ["submit_for_review", "mark_in_progress", "add_note"] }),
-    task("inspection-site", { id: ids.inspection, title: `${project.name} site inspection`, description: `Coordinate an illustrative readiness inspection for ${project.name}.`, prerequisites: [ids.site], status: "pending", readiness: "at_risk", required_documents: ["Inspection readiness checklist.pdf"], available_actions: ["mark_in_progress", "add_note"] }),
-    task("factory-license", { id: ids.license, title: seed.license, description: `Downstream operating approval after the project-specific review and inspection.`, authority: seed.authority, prerequisites: [ids.sector, ids.inspection], status: "blocked", readiness: "blocked", blocked_reason: `Awaiting ${seed.approval.toLowerCase()} and site inspection.`, required_documents: [`${project.name} license application.pdf`], available_actions: ["mark_in_progress", "submit_for_review", "add_note"] })
+    task("site-layout-plan", {
+      id: ids.site,
+      title: `${project.name} site plan`,
+      description: `Illustrative site and infrastructure planning for ${project.name}.`,
+      required_documents: [`${project.name} site plan.pdf`],
+      status: "in_progress",
+      readiness: "at_risk",
+      available_actions: ["mark_complete", "add_note"]
+    }),
+    task("effluent-treatment-review", {
+      id: ids.sector,
+      title: seed.approval,
+      description: `Review the ${seed.approval.toLowerCase()} requirements for ${project.name}.`,
+      authority: seed.authority,
+      required_documents: [`${seed.document}.pdf`],
+      prerequisites: [ids.site],
+      status: "pending",
+      readiness: "needs_review",
+      available_actions: ["submit_for_review", "mark_in_progress", "add_note"]
+    }),
+    task("inspection-site", {
+      id: ids.inspection,
+      title: `${project.name} site inspection`,
+      description: `Coordinate an illustrative readiness inspection for ${project.name}.`,
+      prerequisites: [ids.site],
+      status: "pending",
+      readiness: "at_risk",
+      required_documents: ["Inspection readiness checklist.pdf"],
+      available_actions: ["mark_in_progress", "add_note"]
+    }),
+    task("factory-license", {
+      id: ids.license,
+      title: seed.license,
+      description: `Downstream operating approval after the project-specific review and inspection.`,
+      authority: seed.authority,
+      prerequisites: [ids.sector, ids.inspection],
+      status: "blocked",
+      readiness: "blocked",
+      blocked_reason: `Awaiting ${seed.approval.toLowerCase()} and site inspection.`,
+      required_documents: [`${project.name} license application.pdf`],
+      available_actions: ["mark_in_progress", "submit_for_review", "add_note"]
+    })
   ];
+
   tasks[0].dependents = [ids.sector, ids.inspection];
   tasks[1].dependents = [ids.license];
   tasks[2].dependents = [ids.license];
+
   const edges: RoadmapEdge[] = [
     { id: `${prefix}-edge-site-sector`, source: ids.site, target: ids.sector, edge_type: "depends_on" },
     { id: `${prefix}-edge-site-inspection`, source: ids.site, target: ids.inspection, edge_type: "depends_on" },
     { id: `${prefix}-edge-sector-license`, source: ids.sector, target: ids.license, edge_type: "depends_on" },
     { id: `${prefix}-edge-inspection-license`, source: ids.inspection, target: ids.license, edge_type: "depends_on" }
   ];
+
   return computeRoadmapSummary({
     project_id: project.id,
     project_name: project.name,
     location: project.location,
     last_updated_at: now,
-    summary: roadmapBase.summary,
-    graph: { project_id: project.id, version: 1, generated_at: now, nodes: tasks, edges },
+    summary: {
+      ...roadmapBase.summary,
+      project_name: project.name,
+      location: project.location,
+      last_updated_at: now
+    },
+    graph: {
+      project_id: project.id,
+      version: 1,
+      generated_at: now,
+      nodes: tasks,
+      edges
+    },
     tasks
   });
 }
