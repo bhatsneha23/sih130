@@ -9,8 +9,9 @@ import type { MockProject } from '@/contracts/project-full';
 import type { ProjectDocument, UploadDocumentInput } from '@/contracts/workflows';
 import { PageHeader, Panel, Button, StatusBadge, EmptyState } from '@/components/ui';
 import { getStoredDemoRole, type DemoRole } from '@/lib/demo-role';
+import { Suspense } from "react";
 
-export default function DocumentsPage() {
+function DocumentsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectFilter = searchParams.get('projectId') ?? 'all';
@@ -659,5 +660,12 @@ export default function DocumentsPage() {
         </div>
       )}
     </AppShell>
+  );
+}
+export default function DocumentsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <DocumentsContent />
+    </Suspense>
   );
 }
